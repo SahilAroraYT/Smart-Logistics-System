@@ -1,7 +1,9 @@
+import json
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.database import get_db
-from app.schemas.route import RouteResponse, RouteGenerationRequest, RouteGenerationResponse, RouteStopInfo
+from app.schemas.route import RouteResponse, RouteGenerationRequest, RouteGenerationResponse, RouteDetailResponse, RouteStopInfo
 from app.services import routing_service, delivery_service, audit_service
 from app.models.route import Route, RouteStop
 from app.models.delivery import DeliveryStatus
@@ -15,15 +17,43 @@ def list_routes(db: Session = Depends(get_db)):
     return [RouteResponse.model_validate(r) for r in routes]
 
 
-@router.get("/{route_id}")
+@router.get("/{route_id}", response_model=RouteDetailResponse)
 def get_route(route_id: int, db: Session = Depends(get_db)):
     route = db.query(Route).filter(Route.id == route_id).first()
     if not route:
         raise HTTPException(status_code=404, detail="Route not found")
     stops = db.query(RouteStop).filter(RouteStop.route_id == route_id).order_by(RouteStop.stop_order).all()
-    data = RouteResponse.model_validate(route)
-    data.stops = [RouteStopInfo(stop_order=s.stop_order, delivery_id=s.delivery_id, delivery_order_id=s.delivery.order_id if s.delivery else "") for s in stops]
-    return data
+    stop_infos = []
+    for s in stops:
+        lat = s.delivery.customer_lat if s.delivery else None
+        lon = s.delivery.customer_lon if s.delivery else None
+        stop_infos.append(RouteStopInfo(
+            stop_order=s.stop_order,
+            delivery_id=s.delivery_id,
+            delivery_order_id=s.delivery.order_id if s.delivery else "",
+            customer_lat=lat,
+            customer_lon=lon,
+        ))
+    # Parse geometry from JSON string
+    geometry = None
+    if route.geometry:
+        try:
+            geometry = json.loads(route.geometry)
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+    return RouteDetailResponse(
+        id=route.id,
+        name=route.name,
+        agent_id=route.agent_id,
+        status=route.status,
+        total_distance=route.total_distance,
+        total_risk_score=route.total_risk_score,
+        geometry=geometry,
+        created_at=route.created_at,
+        completed_at=route.completed_at,
+        stops=stop_infos,
+    )
 
 
 @router.post("/generate", response_model=RouteGenerationResponse)

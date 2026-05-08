@@ -1,3 +1,5 @@
+import json
+
 import httpx
 from sqlalchemy.orm import Session
 
@@ -33,7 +35,7 @@ def get_osrm_route(coords: list[tuple[float, float]]) -> dict:
     if len(coords) < 2:
         return {"distance": 0, "duration": 0, "geometry": ""}
     coords_str = ";".join(f"{lon},{lat}" for lat, lon in coords)
-    url = f"{settings.OSRM_BASE_URL}/route/v1/driving/{coords_str}?overview=full&geometries=json"
+    url = f"{settings.OSRM_BASE_URL}/route/v1/driving/{coords_str}?overview=full&geometries=geojson"
     try:
         with httpx.Client(timeout=10.0) as client:
             resp = client.get(url)
@@ -85,12 +87,18 @@ def generate_route(
 
     osrm_result = get_osrm_route(coords)
 
+    geometry_str = None
+    geom = osrm_result.get("geometry")
+    if geom and isinstance(geom, dict) and geom.get("coordinates"):
+        geometry_str = json.dumps(geom)
+
     route = Route(
         name=f"Route-{agent_id}-{len(db.query(Route).filter(Route.agent_id == agent_id).all()) + 1}",
         agent_id=agent_id,
         status=RouteStatus.PLANNED,
         total_distance=osrm_result["distance"],
         total_risk_score=sum(d.risk_score or 0 for d in deliveries) / len(deliveries),
+        geometry=geometry_str,
     )
     db.add(route)
     db.flush()
@@ -143,6 +151,9 @@ def trigger_reroute(db: Session, route_id: int, failed_delivery_ids: list[int]):
     osrm_result = get_osrm_route(coords)
     route.total_distance = osrm_result["distance"]
     route.total_risk_score = sum(d.risk_score or 0 for d in remaining_deliveries) / len(remaining_deliveries) if remaining_deliveries else 0
+    geom = osrm_result.get("geometry")
+    if geom and isinstance(geom, dict) and geom.get("coordinates"):
+        route.geometry = json.dumps(geom)
 
     for stop in remaining_stops:
         db.delete(stop)

@@ -1,7 +1,7 @@
 import enum
 from datetime import datetime
 
-from sqlalchemy import Column, DateTime, Enum, Float, ForeignKey, Integer, String, func
+from sqlalchemy import Column, DateTime, Enum, Float, ForeignKey, Integer, String, Text, func
 from sqlalchemy.orm import relationship
 
 from app.database import Base
@@ -20,13 +20,16 @@ class Route(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(100), nullable=False)
     agent_id = Column(Integer, ForeignKey("delivery_agents.id"), nullable=False)
+    session_id = Column(Integer, ForeignKey("assignment_sessions.id"), nullable=True)
     status = Column(Enum(RouteStatus, native_enum=False), default=RouteStatus.PLANNED)
     total_distance = Column(Float)
     total_risk_score = Column(Float)
+    geometry = Column(Text, nullable=True)
     created_at = Column(DateTime, server_default=func.now())
     completed_at = Column(DateTime, nullable=True)
 
     agent = relationship("DeliveryAgent", back_populates="routes")
+    session = relationship("AssignmentSession", back_populates="routes")
     deliveries = relationship("Delivery", back_populates="route")
     stops = relationship("RouteStop", back_populates="route", order_by="RouteStop.stop_order")
 

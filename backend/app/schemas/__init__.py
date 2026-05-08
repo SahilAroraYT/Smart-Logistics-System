@@ -6,9 +6,20 @@ from .delivery import (
     PredictionResponse,
 )
 from .agent import AgentResponse, AgentAssignmentRequest, AgentAssignmentResponse
-from .route import RouteResponse, RouteGenerationRequest, RouteGenerationResponse
+from .route import RouteResponse, RouteGenerationRequest, RouteGenerationResponse, RouteDetailResponse
 from .alert import AlertResponse
 from .audit_log import AuditLogResponse
+from .assignment import (
+    AssignmentSessionResponse,
+    AssignmentSessionDetail,
+    AssignmentSessionCreate,
+    AddDeliveriesRequest,
+    ManualDeliveryRequest,
+    GenerateRoutesResponse,
+    SessionDeliveryInfo,
+    AgentGroupInfo,
+    RouteInSession,
+)
 
 __all__ = [
     "UserCreate",
@@ -25,6 +36,16 @@ __all__ = [
     "RouteResponse",
     "RouteGenerationRequest",
     "RouteGenerationResponse",
+    "RouteDetailResponse",
     "AlertResponse",
     "AuditLogResponse",
+    "AssignmentSessionResponse",
+    "AssignmentSessionDetail",
+    "AssignmentSessionCreate",
+    "AddDeliveriesRequest",
+    "ManualDeliveryRequest",
+    "GenerateRoutesResponse",
+    "SessionDeliveryInfo",
+    "AgentGroupInfo",
+    "RouteInSession",
 ]

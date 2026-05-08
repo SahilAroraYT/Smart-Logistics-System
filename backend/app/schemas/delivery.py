@@ -21,8 +21,12 @@ class PredictionResponse(BaseModel):
 
 class DeliveryResponse(BaseModel):
     id: int
-    order_id: str
+    order_id: Optional[str] = None
     customer_id: int
+    customer_name: Optional[str] = None
+    delivery_street: Optional[str] = None
+    delivery_city: Optional[str] = None
+    delivery_pincode: Optional[str] = None
     customer_lat: Optional[float] = None
     customer_lon: Optional[float] = None
     warehouse_lat: Optional[float] = None

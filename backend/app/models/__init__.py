@@ -4,6 +4,7 @@ from .delivery import Delivery
 from .route import Route, RouteStop
 from .alert import Alert
 from .audit_log import AuditLog
+from .assignment import AssignmentSession, SessionDelivery
 
 __all__ = [
     "User",
@@ -13,4 +14,6 @@ __all__ = [
     "RouteStop",
     "Alert",
     "AuditLog",
+    "AssignmentSession",
+    "SessionDelivery",
 ]

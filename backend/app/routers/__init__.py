@@ -6,6 +6,8 @@ from app.models import (
     RouteStop,
     Alert,
     AuditLog,
+    AssignmentSession,
+    SessionDelivery,
 )
 
 __all__ = [
@@ -16,4 +18,6 @@ __all__ = [
     "RouteStop",
     "Alert",
     "AuditLog",
+    "AssignmentSession",
+    "SessionDelivery",
 ]

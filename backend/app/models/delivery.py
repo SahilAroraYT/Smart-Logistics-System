@@ -24,6 +24,10 @@ class Delivery(Base):
 
     # Customer & location
     customer_id = Column(Integer, index=True)
+    customer_name = Column(String(255), nullable=True)
+    delivery_street = Column(String(255), nullable=True)
+    delivery_city = Column(String(100), nullable=True)
+    delivery_pincode = Column(String(20), nullable=True)
     customer_lat = Column(Float)
     customer_lon = Column(Float)
     warehouse_lat = Column(Float)
