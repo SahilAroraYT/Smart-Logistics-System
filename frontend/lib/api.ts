@@ -41,6 +41,8 @@ export const api = {
     get: (id: number) => fetchAPI<Delivery>(`/deliveries/${id}`),
     predict: (data: Record<string, unknown>) =>
       fetchAPI<PredictionResult>("/deliveries/predict", { method: "POST", body: JSON.stringify(data) }),
+    addManual: (data: { customer_name: string; delivery_street?: string; delivery_city?: string; delivery_pincode?: string; customer_lat?: number; customer_lon?: number; session_id?: number; package_weight?: number }) =>
+      fetchAPI<Delivery>("/deliveries/manual", { method: "POST", body: JSON.stringify(data) }),
   },
   agents: {
     list: () => fetchAPI<Agent[]>("/agents/"),

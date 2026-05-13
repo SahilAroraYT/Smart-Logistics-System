@@ -119,7 +119,7 @@ def remove_delivery_from_session(db: Session, session_id: int, delivery_id: int)
 
 def create_manual_delivery(
     db: Session,
-    session_id: int,
+    session_id: Optional[int],
     customer_name: str,
     delivery_street: Optional[str] = None,
     delivery_city: Optional[str] = None,
@@ -188,8 +188,9 @@ def create_manual_delivery(
     except Exception:
         pass
 
-    sd = SessionDelivery(session_id=session_id, delivery_id=delivery.id)
-    db.add(sd)
+    if session_id and session_id > 0:
+        sd = SessionDelivery(session_id=session_id, delivery_id=delivery.id)
+        db.add(sd)
     db.commit()
     db.refresh(delivery)
     return delivery

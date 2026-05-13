@@ -115,3 +115,16 @@ class PredictionRequest(BaseModel):
     agent_success_rate: float = 0.0
     order_value: float = 0.0
     delivery_attempts: int = 0
+
+
+class ManualDeliveryCreate(BaseModel):
+    customer_name: str
+    delivery_street: Optional[str] = None
+    delivery_city: Optional[str] = None
+    delivery_pincode: Optional[str] = None
+    customer_lat: Optional[float] = None
+    customer_lon: Optional[float] = None
+    session_id: Optional[int] = None
+    package_weight: float = 1.0
+    package_description: Optional[str] = None
+    phone: Optional[str] = None
