@@ -21,6 +21,7 @@ class DeliveryAgent(Base):
     name = Column(String(255), nullable=False)
     phone = Column(String(20))
     vehicle_type = Column(String(50))
+    warehouse_id = Column(Integer, ForeignKey("warehouses.id"), nullable=True)
     current_lat = Column(Float)
     current_lon = Column(Float)
     current_load = Column(Integer, default=0)
@@ -32,5 +33,6 @@ class DeliveryAgent(Base):
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
     user = relationship("User")
+    warehouse = relationship("Warehouse", back_populates="agents")
     routes = relationship("Route", back_populates="agent")
     deliveries = relationship("Delivery", back_populates="agent")

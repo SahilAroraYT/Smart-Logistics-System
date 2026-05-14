@@ -50,6 +50,7 @@ export interface Agent {
   name: string;
   phone?: string;
   vehicle_type?: string;
+  warehouse_id?: number;
   current_lat?: number;
   current_lon?: number;
   current_load: number;
@@ -57,6 +58,35 @@ export interface Agent {
   success_rate: number;
   is_available: boolean;
   status?: string;
+}
+
+export interface Warehouse {
+  id: number;
+  name: string;
+  street?: string;
+  city?: string;
+  pincode?: string;
+  lat: number;
+  lon: number;
+  created_at: string;
+}
+
+export interface WarehouseCreate {
+  name: string;
+  street?: string;
+  city?: string;
+  pincode?: string;
+  lat: number;
+  lon: number;
+}
+
+export interface WarehouseUpdate {
+  name?: string;
+  street?: string;
+  city?: string;
+  pincode?: string;
+  lat?: number;
+  lon?: number;
 }
 
 export interface Alert {

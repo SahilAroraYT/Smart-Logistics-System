@@ -1,4 +1,4 @@
-import type { User, Delivery, Agent, Alert, AuditLog, Route, PredictionResult, AssignmentSession, AssignmentSessionDetail, RouteDetail } from "@/types";
+import type { User, Delivery, Agent, Alert, AuditLog, Route, PredictionResult, AssignmentSession, AssignmentSessionDetail, RouteDetail, Warehouse, WarehouseCreate, WarehouseUpdate } from "@/types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api";
 
@@ -47,7 +47,19 @@ export const api = {
   agents: {
     list: () => fetchAPI<Agent[]>("/agents/"),
     get: (id: number) => fetchAPI<Agent>(`/agents/${id}`),
+    update: (id: number, data: Record<string, unknown>) =>
+      fetchAPI<Agent>(`/agents/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
     autoAssign: () => fetchAPI("/agents/auto-assign", { method: "POST" }),
+  },
+  warehouses: {
+    list: () => fetchAPI<Warehouse[]>("/warehouses/"),
+    get: (id: number) => fetchAPI<Warehouse>(`/warehouses/${id}`),
+    create: (data: WarehouseCreate) =>
+      fetchAPI<Warehouse>("/warehouses/", { method: "POST", body: JSON.stringify(data) }),
+    update: (id: number, data: WarehouseUpdate) =>
+      fetchAPI<Warehouse>(`/warehouses/${id}`, { method: "PUT", body: JSON.stringify(data) }),
+    delete: (id: number) =>
+      fetchAPI<{ detail: string }>(`/warehouses/${id}`, { method: "DELETE" }),
   },
   routes: {
     list: () => fetchAPI<Route[]>("/routes/"),

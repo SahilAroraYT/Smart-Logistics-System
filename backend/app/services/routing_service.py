@@ -80,7 +80,10 @@ def generate_route(
         d.created_at,
     ))
 
-    coords = [(agent.current_lat or 28.7, agent.current_lon or 77.1)]
+    wh = agent.warehouse
+    origin_lat = wh.lat if wh else (agent.current_lat or 28.7)
+    origin_lon = wh.lon if wh else (agent.current_lon or 77.1)
+    coords = [(origin_lat, origin_lon)]
     for d in deliveries:
         if d.customer_lat and d.customer_lon:
             coords.append((d.customer_lat, d.customer_lon))
@@ -143,7 +146,10 @@ def trigger_reroute(db: Session, route_id: int, failed_delivery_ids: list[int]):
         d.created_at,
     ))
 
-    coords = [(agent.current_lat or 28.7, agent.current_lon or 77.1)]
+    wh = agent.warehouse
+    origin_lat = wh.lat if wh else (agent.current_lat or 28.7)
+    origin_lon = wh.lon if wh else (agent.current_lon or 77.1)
+    coords = [(origin_lat, origin_lon)]
     for d in remaining_deliveries:
         if d.customer_lat and d.customer_lon:
             coords.append((d.customer_lat, d.customer_lon))
@@ -175,8 +181,11 @@ def assign_best_agent(db: Session, delivery: Delivery) -> int | None:
 
     def agent_score(a: DeliveryAgent) -> float:
         dist = 0
-        if delivery.customer_lat and delivery.customer_lon and a.current_lat and a.current_lon:
-            dist = ((delivery.customer_lat - a.current_lat)**2 + (delivery.customer_lon - a.current_lon)**2)**0.5
+        wh = a.warehouse
+        ref_lat = wh.lat if wh else (a.current_lat or 28.7)
+        ref_lon = wh.lon if wh else (a.current_lon or 77.1)
+        if delivery.customer_lat and delivery.customer_lon:
+            dist = ((delivery.customer_lat - ref_lat)**2 + (delivery.customer_lon - ref_lon)**2)**0.5
         load_ratio = a.current_load / a.max_load if a.max_load else 1
         return dist * 0.4 + load_ratio * 0.3 + (1 - a.success_rate) * 0.3
 

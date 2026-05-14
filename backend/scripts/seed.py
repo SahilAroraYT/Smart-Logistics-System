@@ -10,6 +10,7 @@ from app.database import Base, SessionLocal, engine
 from app.models.user import User, Role
 from app.models.agent import DeliveryAgent, AgentStatus
 from app.models.delivery import Delivery, DeliveryStatus
+from app.models.warehouse import Warehouse
 from app.services import auth_service, ml_service
 
 
@@ -33,15 +34,34 @@ def seed_users(db: Session):
     print(f"  Seeded {len(users)} users")
 
 
+def seed_warehouses(db: Session):
+    warehouses_data = [
+        {"name": "Delhi North Hub", "street": "GT Karnal Road", "city": "Delhi", "pincode": "110033", "lat": 28.72, "lon": 77.12},
+        {"name": "Gurgaon Hub", "street": "Golf Course Road", "city": "Gurgaon", "pincode": "122002", "lat": 28.46, "lon": 77.03},
+        {"name": "Noida Hub", "street": "Sector 62", "city": "Noida", "pincode": "201301", "lat": 28.59, "lon": 77.33},
+        {"name": "South Delhi Hub", "street": "Mehrauli Road", "city": "New Delhi", "pincode": "110030", "lat": 28.54, "lon": 77.20},
+    ]
+    created = 0
+    for w in warehouses_data:
+        if not db.query(Warehouse).filter(Warehouse.name == w["name"]).first():
+            db.add(Warehouse(**w))
+            created += 1
+    db.commit()
+    print(f"  Seeded {created} warehouses")
+
+
 def seed_agents(db: Session):
+    warehouses = db.query(Warehouse).all()
     agents = db.query(User).filter(User.role == Role.DELIVERY_AGENT).all()
     created = 0
-    for user in agents:
+    for idx, user in enumerate(agents):
         if not db.query(DeliveryAgent).filter(DeliveryAgent.user_id == user.id).first():
+            wh = warehouses[idx % len(warehouses)] if warehouses else None
             agent = DeliveryAgent(
                 user_id=user.id,
                 name=user.full_name,
                 vehicle_type="bike",
+                warehouse_id=wh.id if wh else None,
                 current_lat=28.7,
                 current_lon=77.1,
                 current_load=0,
@@ -55,10 +75,12 @@ def seed_agents(db: Session):
 
     for i in range(5):
         if not db.query(DeliveryAgent).filter(DeliveryAgent.name == f"Agent {i+2}").first():
+            wh = warehouses[(i + 1) % len(warehouses)] if warehouses else None
             agent = DeliveryAgent(
                 name=f"Agent {i+2}",
                 phone=f"98765432{i}0",
                 vehicle_type=["bike", "car", "bike", "van", "bike"][i],
+                warehouse_id=wh.id if wh else None,
                 current_lat=28.6 + i * 0.1,
                 current_lon=77.0 + i * 0.1,
                 current_load=i * 5,
@@ -142,6 +164,7 @@ def main():
     db = SessionLocal()
     try:
         seed_users(db)
+        seed_warehouses(db)
         seed_agents(db)
         seed_deliveries(db)
         print("Seed complete!")

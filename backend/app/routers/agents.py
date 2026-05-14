@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.database import get_db
-from app.schemas.agent import AgentResponse, AgentAssignmentRequest, AgentAssignmentResponse
+from app.schemas.agent import AgentResponse, AgentUpdate, AgentAssignmentRequest, AgentAssignmentResponse
 from app.services import agent_service, routing_service
 from app.dependencies.auth import get_current_user
 from app.models.user import User
@@ -20,6 +20,18 @@ def get_agent(agent_id: int, db: Session = Depends(get_db)):
     agent = agent_service.get_agent(db, agent_id)
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
+    return AgentResponse.model_validate(agent)
+
+
+@router.patch("/{agent_id}", response_model=AgentResponse)
+def update_agent(agent_id: int, payload: AgentUpdate, db: Session = Depends(get_db)):
+    agent = agent_service.get_agent(db, agent_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    for key, val in payload.model_dump(exclude_unset=True).items():
+        setattr(agent, key, val)
+    db.commit()
+    db.refresh(agent)
     return AgentResponse.model_validate(agent)
 
 

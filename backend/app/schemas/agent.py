@@ -10,6 +10,7 @@ class AgentResponse(BaseModel):
     name: str
     phone: Optional[str] = None
     vehicle_type: Optional[str] = None
+    warehouse_id: Optional[int] = None
     current_lat: Optional[float] = None
     current_lon: Optional[float] = None
     current_load: int
@@ -20,6 +21,18 @@ class AgentResponse(BaseModel):
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class AgentUpdate(BaseModel):
+    name: Optional[str] = None
+    phone: Optional[str] = None
+    vehicle_type: Optional[str] = None
+    warehouse_id: Optional[int] = None
+    current_lat: Optional[float] = None
+    current_lon: Optional[float] = None
+    current_load: Optional[int] = None
+    max_load: Optional[int] = None
+    is_available: Optional[bool] = None
 
 
 class AgentAssignmentRequest(BaseModel):
