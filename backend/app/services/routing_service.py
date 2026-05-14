@@ -1,4 +1,5 @@
 import json
+import math
 
 import httpx
 from sqlalchemy.orm import Session
@@ -8,6 +9,16 @@ from app.models.delivery import Delivery, DeliveryStatus
 from app.models.agent import DeliveryAgent
 from app.models.route import Route, RouteStop, RouteStatus
 from app.services import delivery_service, agent_service, alert_service
+
+
+def haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    R = 6371.0
+    dlat = math.radians(lat2 - lat1)
+    dlon = math.radians(lon2 - lon1)
+    a = (math.sin(dlat / 2) ** 2
+         + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2))
+         * math.sin(dlon / 2) ** 2)
+    return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
 
 TRAFFIC_PENALTY = {"low": 0.0, "medium": 0.5, "high": 1.0}
@@ -57,6 +68,35 @@ def get_osrm_route(coords: list[tuple[float, float]]) -> dict:
     return {"distance": total, "duration": total * 300, "geometry": {}}
 
 
+def _nearest_neighbor_order(deliveries: list[Delivery], origin_lat: float, origin_lon: float) -> list[Delivery]:
+    RISK_WEIGHTS: dict[str, float] = {"HIGH": 3.0, "MEDIUM": 1.5, "LOW": 1.0}
+
+    visited = [False] * len(deliveries)
+    ordered: list[Delivery] = []
+    cur_lat, cur_lon = origin_lat, origin_lon
+
+    while len(ordered) < len(deliveries):
+        best_idx = -1
+        best_score = float("inf")
+        for i, d in enumerate(deliveries):
+            if visited[i] or not d.customer_lat or not d.customer_lon:
+                continue
+            dist = haversine_km(cur_lat, cur_lon, d.customer_lat, d.customer_lon)
+            rw = RISK_WEIGHTS.get(d.risk_category or "LOW", 1.0)
+            score = dist / rw
+            if score < best_score:
+                best_score = score
+                best_idx = i
+        if best_idx == -1:
+            break
+        ordered.append(deliveries[best_idx])
+        visited[best_idx] = True
+        cur_lat = deliveries[best_idx].customer_lat
+        cur_lon = deliveries[best_idx].customer_lon
+
+    return ordered
+
+
 def generate_route(
     db: Session,
     agent_id: int,
@@ -75,14 +115,12 @@ def generate_route(
     if not deliveries:
         return None
 
-    deliveries.sort(key=lambda d: (
-        0 if d.risk_category == "HIGH" else 1 if d.risk_category == "MEDIUM" else 2,
-        d.created_at,
-    ))
-
     wh = agent.warehouse
     origin_lat = wh.lat if wh else (agent.current_lat or 28.7)
     origin_lon = wh.lon if wh else (agent.current_lon or 77.1)
+
+    deliveries = _nearest_neighbor_order(deliveries, origin_lat, origin_lon)
+
     coords = [(origin_lat, origin_lon)]
     for d in deliveries:
         if d.customer_lat and d.customer_lon:
@@ -141,14 +179,12 @@ def trigger_reroute(db: Session, route_id: int, failed_delivery_ids: list[int]):
         return None
 
     remaining_deliveries = [s.delivery for s in remaining_stops if s.delivery]
-    remaining_deliveries.sort(key=lambda d: (
-        0 if (d.risk_category == "HIGH") else 1 if (d.risk_category == "MEDIUM") else 2,
-        d.created_at,
-    ))
 
     wh = agent.warehouse
     origin_lat = wh.lat if wh else (agent.current_lat or 28.7)
     origin_lon = wh.lon if wh else (agent.current_lon or 77.1)
+    remaining_deliveries = _nearest_neighbor_order(remaining_deliveries, origin_lat, origin_lon)
+
     coords = [(origin_lat, origin_lon)]
     for d in remaining_deliveries:
         if d.customer_lat and d.customer_lon:
@@ -180,12 +216,12 @@ def assign_best_agent(db: Session, delivery: Delivery) -> int | None:
         return None
 
     def agent_score(a: DeliveryAgent) -> float:
-        dist = 0
         wh = a.warehouse
         ref_lat = wh.lat if wh else (a.current_lat or 28.7)
         ref_lon = wh.lon if wh else (a.current_lon or 77.1)
+        dist = 0.0
         if delivery.customer_lat and delivery.customer_lon:
-            dist = ((delivery.customer_lat - ref_lat)**2 + (delivery.customer_lon - ref_lon)**2)**0.5
+            dist = haversine_km(ref_lat, ref_lon, delivery.customer_lat, delivery.customer_lon)
         load_ratio = a.current_load / a.max_load if a.max_load else 1
         return dist * 0.4 + load_ratio * 0.3 + (1 - a.success_rate) * 0.3
 

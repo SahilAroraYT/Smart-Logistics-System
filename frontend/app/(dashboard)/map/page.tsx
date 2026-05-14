@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
 import { api } from "@/lib/api";
-import type { Delivery, RouteDetail } from "@/types";
+import type { Delivery, RouteDetail, Warehouse } from "@/types";
 import { L } from "@/lib/leaflet";
 import "leaflet/dist/leaflet.css";
 
@@ -19,6 +19,11 @@ const RISK_COLORS: Record<string, string> = {
   MEDIUM: "#f59e0b",
   HIGH: "#ef4444",
 };
+
+const ROUTE_COLORS = [
+  "#3b82f6", "#8b5cf6", "#ec4899", "#f97316",
+  "#14b8a6", "#6366f1", "#f43f5e", "#84cc16",
+];
 
 function RiskIcon(color: string) {
   return L.divIcon({
@@ -38,24 +43,48 @@ function NumberedIcon(num: number, color: string) {
   });
 }
 
+function WarehouseIcon() {
+  return L.divIcon({
+    className: "custom-warehouse-marker",
+    html: `<div style="display:flex;flex-direction:column;align-items:center;gap:0">
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#2563eb" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="3" y="3" width="18" height="18" rx="2"/>
+        <path d="M3 9h18"/>
+        <path d="M9 3v18"/>
+        <path d="M15 3v18"/>
+      </svg>
+    </div>`,
+    iconSize: [28, 28],
+    iconAnchor: [14, 14],
+  });
+}
+
 export default function MapPage() {
   const searchParams = useSearchParams();
   const routeId = searchParams.get("route_id");
 
   const [deliveries, setDeliveries] = useState<Delivery[]>([]);
+  const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [routeCoords, setRouteCoords] = useState<[number, number][]>([]);
   const [routeGeometryCoords, setRouteGeometryCoords] = useState<[number, number][]>([]);
   const [routeName, setRouteName] = useState<string | null>(null);
+  const [routeAgentId, setRouteAgentId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [center, setCenter] = useState<[number, number]>([28.65, 77.1]);
+
+  useEffect(() => {
+    api.warehouses.list()
+      .then(setWarehouses)
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     if (routeId) {
       const id = parseInt(routeId);
       api.routes.get(id).then((data: RouteDetail) => {
         setRouteName(data.name);
+        setRouteAgentId(data.agent_id);
 
-        // Stop coordinates for numbered markers
         const coords: [number, number][] = [];
         data.stops.forEach((s) => {
           if (s.customer_lat && s.customer_lon) {
@@ -64,12 +93,10 @@ export default function MapPage() {
         });
         setRouteCoords(coords);
 
-        // Geometry coordinates for road-following polyline (from OSRM GeoJSON)
         const geomCoords: [number, number][] = [];
         if (data.geometry?.type === "LineString" && Array.isArray(data.geometry.coordinates)) {
           for (const c of data.geometry.coordinates) {
             if (Array.isArray(c) && c.length >= 2) {
-              // OSRM returns [lon, lat] — flip to [lat, lon] for Leaflet
               geomCoords.push([c[1], c[0]]);
             }
           }
@@ -91,6 +118,8 @@ export default function MapPage() {
     }
   }, [routeId]);
 
+  const routeColor = routeAgentId !== null ? ROUTE_COLORS[routeAgentId % ROUTE_COLORS.length] : "#3b82f6";
+
   if (loading) return <div className="p-8 text-center text-zinc-500">Loading map...</div>;
 
   return (
@@ -99,28 +128,43 @@ export default function MapPage() {
         <div className="absolute top-4 left-72 z-[1000] rounded-lg bg-white px-4 py-2 shadow-md">
           <span className="text-sm font-semibold">{routeName}</span>
           <span className="ml-2 text-xs text-zinc-500">{routeCoords.length} stops</span>
+          {routeAgentId !== null && (
+            <span className="ml-2 text-xs" style={{ color: routeColor }}>
+              ● Agent {routeAgentId}
+            </span>
+          )}
         </div>
       )}
       <MapContainer center={center} zoom={routeId ? 13 : 10} className="h-full w-full">
         <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" attribution="OpenStreetMap" />
 
-        {/* Route polyline — road-following from OSRM geometry, fallback to straight-line stops */}
+        {warehouses.map((wh) => (
+          <Marker key={`wh-${wh.id}`} position={[wh.lat, wh.lon]} icon={WarehouseIcon()}>
+            <Popup>
+              <div className="text-sm">
+                <strong>🏭 {wh.name}</strong><br />
+                {wh.street || ""} {wh.city || ""} {wh.pincode || ""}<br />
+                Loc: {wh.lat.toFixed(4)}, {wh.lon.toFixed(4)}
+              </div>
+            </Popup>
+          </Marker>
+        ))}
+
         {routeGeometryCoords.length > 1 && (
           <Polyline
             positions={routeGeometryCoords}
-            pathOptions={{ color: "#3b82f6", weight: 4, opacity: 0.7 }}
+            pathOptions={{ color: routeColor, weight: 4, opacity: 0.7 }}
           />
         )}
         {routeGeometryCoords.length <= 1 && routeCoords.length > 1 && (
           <Polyline
             positions={routeCoords}
-            pathOptions={{ color: "#3b82f6", weight: 3, opacity: 0.5, dashArray: "8 4" }}
+            pathOptions={{ color: routeColor, weight: 3, opacity: 0.5, dashArray: "8 4" }}
           />
         )}
 
-        {/* Route stops with numbered markers */}
         {routeId && routeCoords.map((coord, idx) => (
-          <Marker key={idx} position={coord} icon={NumberedIcon(idx + 1, "#3b82f6")}>
+          <Marker key={idx} position={coord} icon={NumberedIcon(idx + 1, routeColor)}>
             <Popup>
               <div className="text-sm">
                 <strong>Stop #{idx + 1}</strong>
@@ -129,7 +173,6 @@ export default function MapPage() {
           </Marker>
         ))}
 
-        {/* Regular delivery markers (when not viewing a route) */}
         {!routeId && deliveries.map((d) => {
           const color = d.risk_category ? RISK_COLORS[d.risk_category] || "#888" : "#888";
           return (
