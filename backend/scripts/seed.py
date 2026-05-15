@@ -96,6 +96,8 @@ def seed_agents(db: Session):
 
 
 def seed_deliveries(db: Session):
+    import math
+
     csv_path = Path(__file__).parent.parent / "data" / "logistics_dataset_v3.csv"
     df = pd.read_csv(csv_path).head(500)
 
@@ -105,17 +107,42 @@ def seed_deliveries(db: Session):
     ml_service.load_model()
     created = 0
 
+    def haversine(lat1, lon1, lat2, lon2):
+        R = 6371.0
+        dlat = math.radians(lat2 - lat1)
+        dlon = math.radians(lon2 - lon1)
+        a = (math.sin(dlat / 2) ** 2
+             + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2))
+             * math.sin(dlon / 2) ** 2)
+        return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+    warehouses = db.query(Warehouse).all()
+
     for _, row in df.iterrows():
         pred_data = row.to_dict()
         result = ml_service.predict(pred_data)
 
+        customer_lat = row["customer_lat"]
+        customer_lon = row["customer_lon"]
+
+        nearest_wh = None
+        wh_lat = row["warehouse_lat"]
+        wh_lon = row["warehouse_lon"]
+        wh_id = None
+        if warehouses and customer_lat and customer_lon:
+            nearest_wh = min(warehouses, key=lambda w: haversine(customer_lat, customer_lon, w.lat, w.lon))
+            wh_id = nearest_wh.id
+            wh_lat = nearest_wh.lat
+            wh_lon = nearest_wh.lon
+
         db.add(Delivery(
             order_id=str(int(row["order_id"])),
             customer_id=int(row["customer_id"]),
-            customer_lat=row["customer_lat"],
-            customer_lon=row["customer_lon"],
-            warehouse_lat=row["warehouse_lat"],
-            warehouse_lon=row["warehouse_lon"],
+            customer_lat=customer_lat,
+            customer_lon=customer_lon,
+            warehouse_lat=wh_lat,
+            warehouse_lon=wh_lon,
+            warehouse_id=wh_id,
             distance_km=row["distance_km"],
             delivery_zone=row["delivery_zone"],
             time_slot=row["time_slot"],

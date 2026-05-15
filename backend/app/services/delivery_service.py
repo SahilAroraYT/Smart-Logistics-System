@@ -14,6 +14,7 @@ def get_deliveries(
     status: Optional[str] = None,
     risk_category: Optional[str] = None,
     agent_id: Optional[int] = None,
+    warehouse_id: Optional[int] = None,
 ):
     query = db.query(Delivery)
     if status:
@@ -22,6 +23,8 @@ def get_deliveries(
         query = query.filter(Delivery.risk_category == risk_category)
     if agent_id:
         query = query.filter(Delivery.agent_id == agent_id)
+    if warehouse_id:
+        query = query.filter(Delivery.warehouse_id == warehouse_id)
     total = query.count()
     deliveries = (
         query.order_by(Delivery.id.desc())
@@ -47,12 +50,22 @@ def get_pending_deliveries(db: Session):
 
 def update_delivery_status(db: Session, delivery_id: int, status: DeliveryStatus):
     delivery = get_delivery(db, delivery_id)
-    if delivery:
-        delivery.status = status
-        if status == DeliveryStatus.DELIVERED:
-            delivery.delivered_at = datetime.utcnow()
-        db.commit()
-        db.refresh(delivery)
+    if not delivery:
+        return None
+    delivery.status = status
+    if status == DeliveryStatus.DELIVERED:
+        delivery.delivered_at = datetime.utcnow()
+    db.commit()
+    db.refresh(delivery)
+
+    if status == DeliveryStatus.FAILED and delivery.assigned_route_id:
+        from app.services import routing_service
+        routing_service.trigger_reroute(
+            db,
+            route_id=delivery.assigned_route_id,
+            failed_delivery_ids=[delivery.id],
+        )
+
     return delivery
 
 

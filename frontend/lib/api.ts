@@ -50,6 +50,8 @@ export const api = {
     update: (id: number, data: Record<string, unknown>) =>
       fetchAPI<Agent>(`/agents/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
     autoAssign: () => fetchAPI("/agents/auto-assign", { method: "POST" }),
+    setOffline: (id: number) =>
+      fetchAPI<{ detail: string; agent: Agent }>(`/agents/${id}/offline`, { method: "POST" }),
   },
   warehouses: {
     list: () => fetchAPI<Warehouse[]>("/warehouses/"),

@@ -8,7 +8,10 @@ from app.models.assignment import AssignmentSession, SessionDelivery
 from app.models.delivery import Delivery, DeliveryStatus
 from app.models.agent import DeliveryAgent
 from app.models.route import Route, RouteStop, RouteStatus
+from app.models.warehouse import Warehouse
 from app.services import delivery_service, agent_service, routing_service, ml_service
+from app.services.clustering_service import cluster_deliveries
+from app.services.vehicle_config import get_required_vehicle, is_vehicle_compatible
 
 
 NOMINATIM_BASE = "https://nominatim.openstreetmap.org/search"
@@ -143,8 +146,8 @@ def create_manual_delivery(
         delivery_pincode=delivery_pincode,
         customer_lat=resolved_lat,
         customer_lon=resolved_lon,
-        warehouse_lat=28.7,
-        warehouse_lon=77.1,
+        warehouse_lat=resolved_lat or 28.7,
+        warehouse_lon=resolved_lon or 77.1,
         distance_km=5.0,
         package_weight=package_weight,
         package_size="medium",
@@ -188,6 +191,16 @@ def create_manual_delivery(
     except Exception:
         pass
 
+    if delivery.customer_lat and delivery.customer_lon:
+        warehouses = db.query(Warehouse).all()
+        if warehouses:
+            nearest_wh = min(warehouses, key=lambda w: _haversine_km(
+                delivery.customer_lat, delivery.customer_lon, w.lat, w.lon
+            ))
+            delivery.warehouse_id = nearest_wh.id
+            delivery.warehouse_lat = nearest_wh.lat
+            delivery.warehouse_lon = nearest_wh.lon
+
     if session_id and session_id > 0:
         sd = SessionDelivery(session_id=session_id, delivery_id=delivery.id)
         db.add(sd)
@@ -196,54 +209,18 @@ def create_manual_delivery(
     return delivery
 
 
-def _greedy_assign_deliveries(
-    db: Session, deliveries: list[Delivery], agents: list[DeliveryAgent]
-) -> dict[int, list[int]]:
-    """Greedy cluster-based assignment: sort deliveries by risk, assign each to best agent."""
-    agent_assignments: dict[int, list[int]] = {a.id: [] for a in agents}
-    agent_capacities: dict[int, int] = {
-        a.id: a.max_load - a.current_load for a in agents
-    }
-
-    sorted_dels = sorted(
-        deliveries,
-        key=lambda d: (
-            0 if d.risk_category == "HIGH" else 1 if d.risk_category == "MEDIUM" else 2,
-            -(d.risk_score or 0),
-        ),
-    )
-
-    for d in sorted_dels:
-        best_agent_id = None
-        best_score = float("inf")
-
-        for a in agents:
-            if agent_capacities.get(a.id, 0) <= 0:
-                continue
-
-            dist = 0.0
-            if d.customer_lat and d.customer_lon and a.current_lat and a.current_lon:
-                dist = (
-                    (d.customer_lat - a.current_lat) ** 2
-                    + (d.customer_lon - a.current_lon) ** 2
-                ) ** 0.5
-
-            load_ratio = (a.current_load + len(agent_assignments[a.id])) / a.max_load if a.max_load else 1
-            score = dist * 0.4 + load_ratio * 0.3 + (1 - a.success_rate) * 0.3
-
-            if score < best_score:
-                best_score = score
-                best_agent_id = a.id
-
-        if best_agent_id is not None:
-            agent_assignments[best_agent_id].append(d.id)
-            agent_capacities[best_agent_id] -= 1
-
-    return {k: v for k, v in agent_assignments.items() if v}
+def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    import math
+    R = 6371.0
+    dlat = math.radians(lat2 - lat1)
+    dlon = math.radians(lon2 - lon1)
+    a = (math.sin(dlat / 2) ** 2
+         + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2))
+         * math.sin(dlon / 2) ** 2)
+    return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
 
 def generate_routes_for_session(db: Session, session_id: int) -> dict:
-    """Cluster session deliveries → assign to agents → generate per-agent routes."""
     session = get_session(db, session_id)
     if not session:
         return {"error": "Session not found"}
@@ -275,26 +252,81 @@ def generate_routes_for_session(db: Session, session_id: int) -> dict:
         db.commit()
         return {"routes_created": 0, "unassigned_count": len(deliveries), "error": "No available agents"}
 
-    agent_assignments = _greedy_assign_deliveries(db, deliveries, agents)
+    warehouses = db.query(Warehouse).all()
+    if not warehouses:
+        session.status = "completed"
+        db.commit()
+        return {"routes_created": 0, "unassigned_count": len(deliveries), "error": "No warehouses configured"}
+
+    coords = [(d.customer_lat or 0, d.customer_lon or 0) for d in deliveries]
+    clusters = cluster_deliveries(coords, start_radius_km=10.0)
 
     routes_created = 0
     unassigned = len(deliveries)
 
-    for agent_id, d_ids in agent_assignments.items():
-        route = routing_service.generate_route(db, agent_id, d_ids)
+    for cluster_indices in clusters:
+        cluster_deliveries_list = [deliveries[i] for i in cluster_indices]
+        cluster_coords = [coords[i] for i in cluster_indices]
+
+        centroid_lat = sum(c[0] for c in cluster_coords) / len(cluster_coords)
+        centroid_lon = sum(c[1] for c in cluster_coords) / len(cluster_coords)
+
+        best_wh = min(warehouses, key=lambda w: _haversine_km(centroid_lat, centroid_lon, w.lat, w.lon))
+
+        max_weight = max((d.package_weight or 0) for d in cluster_deliveries_list)
+        sizes = [d.package_size or "small" for d in cluster_deliveries_list]
+        size_order = {"small": 0, "medium": 1, "large": 2, "xl": 3}
+        max_size = max(sizes, key=lambda s: size_order.get(s, 0))
+        required_vehicle = get_required_vehicle(max_weight, max_size)
+
+        wh_agents = agent_service.get_agents_by_warehouse(db, best_wh.id)
+
+        eligible = [a for a in wh_agents if is_vehicle_compatible(a.vehicle_type or "bike", required_vehicle)]
+        if not eligible:
+            fallback_wh = sorted(warehouses, key=lambda w: _haversine_km(centroid_lat, centroid_lon, w.lat, w.lon))
+            for fw in fallback_wh:
+                if fw.id == best_wh.id:
+                    continue
+                fa = agent_service.get_agents_by_warehouse(db, fw.id)
+                eligible = [a for a in fa if is_vehicle_compatible(a.vehicle_type or "bike", required_vehicle)]
+                if eligible:
+                    best_wh = fw
+                    break
+
+        if not eligible:
+            eligible = wh_agents or [a for a in agents if is_vehicle_compatible(a.vehicle_type or "bike", required_vehicle)]
+
+        if not eligible:
+            continue
+
+        def _score(a: DeliveryAgent) -> float:
+            load_ratio = (a.current_load + len(cluster_deliveries_list)) / a.max_load if a.max_load else 1
+            vehicle_match = 0.0 if a.vehicle_type == required_vehicle else 0.1
+            return load_ratio * 0.5 + (1 - a.success_rate) * 0.3 + vehicle_match * 0.2
+
+        best_agent = min(eligible, key=_score)
+
+        wh = db.query(Warehouse).filter(Warehouse.id == best_wh.id).first()
+        for d in cluster_deliveries_list:
+            d.warehouse_id = wh.id
+            d.warehouse_lat = wh.lat
+            d.warehouse_lon = wh.lon
+
+        dids = [d.id for d in cluster_deliveries_list]
+        route = routing_service.generate_route(db, best_agent.id, dids)
         if route:
             route.session_id = session_id
-            for did in d_ids:
+            for d in cluster_deliveries_list:
                 sd = (
                     db.query(SessionDelivery)
-                    .filter(SessionDelivery.session_id == session_id, SessionDelivery.delivery_id == did)
+                    .filter(SessionDelivery.session_id == session_id, SessionDelivery.delivery_id == d.id)
                     .first()
                 )
                 if sd:
-                    sd.agent_id = agent_id
+                    sd.agent_id = best_agent.id
                     sd.status = "assigned"
             routes_created += 1
-            unassigned -= len(d_ids)
+            unassigned -= len(cluster_deliveries_list)
 
     session.status = "completed"
     db.commit()
@@ -439,4 +471,5 @@ def _get_delivery_info(db: Session, delivery_id: int) -> Optional[dict]:
         "status": d.status,
         "delivery_zone": d.delivery_zone,
         "distance_km": d.distance_km,
+        "warehouse_id": d.warehouse_id,
     }

@@ -14,6 +14,7 @@ class DeliveryStatus(str, enum.Enum):
     DELIVERED = "delivered"
     FAILED = "failed"
     REROUTED = "rerouted"
+    UNASSIGNED = "unassigned"
 
 
 class Delivery(Base):
@@ -77,6 +78,7 @@ class Delivery(Base):
 
     # Assignment & risk
     agent_id = Column(Integer, ForeignKey("delivery_agents.id"), nullable=True)
+    warehouse_id = Column(Integer, ForeignKey("warehouses.id"), nullable=True)
     status = Column(Enum(DeliveryStatus, native_enum=False), default=DeliveryStatus.PENDING)
     risk_score = Column(Float, nullable=True)
     risk_category = Column(String(10), nullable=True)
@@ -87,5 +89,6 @@ class Delivery(Base):
     delivered_at = Column(DateTime, nullable=True)
 
     agent = relationship("DeliveryAgent", back_populates="deliveries")
+    warehouse = relationship("Warehouse")
     route = relationship("Route", back_populates="deliveries")
     alerts = relationship("Alert", back_populates="delivery")

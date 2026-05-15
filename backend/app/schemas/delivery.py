@@ -62,6 +62,7 @@ class DeliveryResponse(BaseModel):
     delivery_attempts: Optional[int] = None
     previous_failed_attempt_same_order: Optional[int] = None
     agent_id: Optional[int] = None
+    warehouse_id: Optional[int] = None
     status: Optional[str] = None
     risk_score: Optional[float] = None
     risk_category: Optional[str] = None

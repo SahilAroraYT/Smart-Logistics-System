@@ -62,3 +62,15 @@ def auto_assign_all(db: Session = Depends(get_db)):
             agent_service.assign_delivery(db, d.id, agent_id)
             assigned.append({"delivery_id": d.id, "agent_id": agent_id})
     return {"assigned_count": len(assigned), "assignments": assigned}
+
+
+@router.post("/{agent_id}/offline")
+def take_agent_offline(agent_id: int, db: Session = Depends(get_db)):
+    agent = agent_service.set_agent_offline(db, agent_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    return {
+        "detail": f"Agent {agent_id} set offline",
+        "routes_cancelled": len(agent.routes or []) if hasattr(agent, "routes") else 0,
+        "agent": AgentResponse.model_validate(agent),
+    }
