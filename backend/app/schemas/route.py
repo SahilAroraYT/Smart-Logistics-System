@@ -31,6 +31,8 @@ class RouteStopInfo(BaseModel):
     estimated_arrival: Optional[str] = None
     customer_lat: Optional[float] = None
     customer_lon: Optional[float] = None
+    risk_category: Optional[str] = None
+    risk_score: Optional[float] = None
 
 
 class RouteGenerationResponse(BaseModel):

@@ -25,14 +25,15 @@ def get_route(route_id: int, db: Session = Depends(get_db)):
     stops = db.query(RouteStop).filter(RouteStop.route_id == route_id).order_by(RouteStop.stop_order).all()
     stop_infos = []
     for s in stops:
-        lat = s.delivery.customer_lat if s.delivery else None
-        lon = s.delivery.customer_lon if s.delivery else None
+        d = s.delivery
         stop_infos.append(RouteStopInfo(
             stop_order=s.stop_order,
             delivery_id=s.delivery_id,
-            delivery_order_id=s.delivery.order_id if s.delivery else "",
-            customer_lat=lat,
-            customer_lon=lon,
+            delivery_order_id=d.order_id if d else "",
+            customer_lat=d.customer_lat if d else None,
+            customer_lon=d.customer_lon if d else None,
+            risk_category=d.risk_category if d else None,
+            risk_score=d.risk_score if d else None,
         ))
     # Parse geometry from JSON string
     geometry = None

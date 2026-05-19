@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
 import { api } from "@/lib/api";
-import type { Delivery, RouteDetail, Warehouse } from "@/types";
+import type { Delivery, RouteDetail, RouteStopDetail, Warehouse } from "@/types";
 import { L } from "@/lib/leaflet";
 import "leaflet/dist/leaflet.css";
 
@@ -66,6 +66,7 @@ export default function MapPage() {
   const [deliveries, setDeliveries] = useState<Delivery[]>([]);
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [routeCoords, setRouteCoords] = useState<[number, number][]>([]);
+  const [routeStops, setRouteStops] = useState<RouteStopDetail[]>([]);
   const [routeGeometryCoords, setRouteGeometryCoords] = useState<[number, number][]>([]);
   const [routeName, setRouteName] = useState<string | null>(null);
   const [routeAgentId, setRouteAgentId] = useState<number | null>(null);
@@ -86,12 +87,15 @@ export default function MapPage() {
         setRouteAgentId(data.agent_id);
 
         const coords: [number, number][] = [];
+        const stops: RouteStopDetail[] = [];
         data.stops.forEach((s) => {
           if (s.customer_lat && s.customer_lon) {
             coords.push([s.customer_lat, s.customer_lon]);
+            stops.push(s);
           }
         });
         setRouteCoords(coords);
+        setRouteStops(stops);
 
         const geomCoords: [number, number][] = [];
         if (data.geometry?.type === "LineString" && Array.isArray(data.geometry.coordinates)) {
@@ -163,15 +167,28 @@ export default function MapPage() {
           />
         )}
 
-        {routeId && routeCoords.map((coord, idx) => (
-          <Marker key={idx} position={coord} icon={NumberedIcon(idx + 1, routeColor)}>
-            <Popup>
-              <div className="text-sm">
-                <strong>Stop #{idx + 1}</strong>
-              </div>
-            </Popup>
-          </Marker>
-        ))}
+        {routeId && routeCoords.map((coord, idx) => {
+          const stop = routeStops[idx];
+          const riskColor = stop?.risk_category
+            ? RISK_COLORS[stop.risk_category] || "#888"
+            : routeColor;
+          return (
+            <Marker key={idx} position={coord} icon={NumberedIcon(idx + 1, riskColor)}>
+              <Popup>
+                <div className="text-sm">
+                  <strong>Stop #{idx + 1}</strong>
+                  {stop?.delivery_order_id && <><br />Order: {stop.delivery_order_id}</>}
+                  {stop?.risk_category && (
+                    <>
+                      <br />Risk: <span style={{ color: riskColor }}>{stop.risk_category}</span>
+                      {stop.risk_score != null && ` (${stop.risk_score.toFixed(1)})`}
+                    </>
+                  )}
+                </div>
+              </Popup>
+            </Marker>
+          );
+        })}
 
         {!routeId && deliveries.map((d) => {
           const color = d.risk_category ? RISK_COLORS[d.risk_category] || "#888" : "#888";

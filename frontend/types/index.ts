@@ -127,6 +127,8 @@ export interface RouteStopDetail {
   delivery_order_id?: string;
   customer_lat?: number;
   customer_lon?: number;
+  risk_category?: string;
+  risk_score?: number;
 }
 
 export interface RouteDetail {
