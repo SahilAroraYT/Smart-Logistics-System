@@ -1,7 +1,6 @@
 from sqlalchemy.orm import Session
 from app.models.agent import DeliveryAgent, AgentStatus
 from app.models.delivery import Delivery, DeliveryStatus
-from app.models.route import Route, RouteStatus
 
 
 def get_agents(db: Session):
@@ -16,15 +15,6 @@ def get_available_agents(db: Session):
     return (
         db.query(DeliveryAgent)
         .filter(DeliveryAgent.is_available == True)
-        .order_by(DeliveryAgent.current_load.asc(), DeliveryAgent.success_rate.desc())
-        .all()
-    )
-
-
-def get_agents_by_warehouse(db: Session, warehouse_id: int):
-    return (
-        db.query(DeliveryAgent)
-        .filter(DeliveryAgent.warehouse_id == warehouse_id, DeliveryAgent.is_available == True)
         .order_by(DeliveryAgent.current_load.asc(), DeliveryAgent.success_rate.desc())
         .all()
     )
@@ -51,32 +41,3 @@ def batch_assign_deliveries(db: Session, delivery_ids: list[int], agent_id: int)
         if delivery:
             assigned.append(did)
     return assigned
-
-
-def set_agent_offline(db: Session, agent_id: int):
-    agent = get_agent(db, agent_id)
-    if not agent:
-        return None
-    agent.is_available = False
-    agent.status = AgentStatus.OFFLINE
-    db.commit()
-
-    routes = db.query(Route).filter(
-        Route.agent_id == agent_id,
-        Route.status == RouteStatus.PLANNED,
-    ).all()
-
-    unassigned_count = 0
-    for route in routes:
-        route.status = RouteStatus.CANCELLED
-        for stop in route.stops:
-            d = stop.delivery
-            if d and d.status == DeliveryStatus.ASSIGNED:
-                d.status = DeliveryStatus.UNASSIGNED
-                d.agent_id = None
-                d.assigned_route_id = None
-                unassigned_count += 1
-        db.commit()
-
-    db.commit()
-    return agent

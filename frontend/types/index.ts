@@ -38,6 +38,7 @@ export interface Delivery {
   agent_daily_load?: number;
   previous_failed_attempt_same_order?: number;
   agent_id?: number;
+  warehouse_id?: number;
   status?: string;
   risk_score?: number;
   risk_category?: string;

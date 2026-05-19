@@ -1,33 +1,70 @@
-VEHICLE_CONFIG = {
-    "bike": {"max_weight_kg": 15, "max_size": "medium", "max_range_km": 15},
-    "car": {"max_weight_kg": 30, "max_size": "large", "max_range_km": 50},
-    "van": {"max_weight_kg": 200, "max_size": "xl", "max_range_km": 500},
+import json
+import os
+from pathlib import Path
+
+DEFAULT_CONFIG = {
+    "vehicle_tiers": ["bike", "car", "van"],
+    "vehicles": {
+        "bike": {"max_weight_kg": 5, "max_size": "small", "max_range_km": 15},
+        "car": {"max_weight_kg": 20, "max_size": "medium", "max_range_km": 50},
+        "van": {"max_weight_kg": 100, "max_size": "xl", "max_range_km": 200},
+    },
+    "size_order": ["small", "medium", "large", "xl"],
 }
 
-SIZE_TIER = {"small": 0, "medium": 1, "large": 2, "xl": 3}
+_config: dict | None = None
 
 
-def get_required_vehicle(package_weight: float, package_size: str) -> str:
-    weight_tier = "van"
-    for vtype, spec in VEHICLE_CONFIG.items():
-        if package_weight <= spec["max_weight_kg"]:
-            weight_tier = vtype
-            break
+def _load_config() -> dict:
+    global _config
+    if _config is not None:
+        return _config
 
-    size_tier = "van"
-    pkg_size_tier = SIZE_TIER.get(package_size, 0)
-    for vtype, spec in VEHICLE_CONFIG.items():
-        spec_tier = SIZE_TIER.get(spec["max_size"], 3)
-        if pkg_size_tier <= spec_tier:
-            size_tier = vtype
-            break
+    config_path = os.environ.get("VEHICLE_CONFIG_PATH")
+    if config_path and Path(config_path).exists():
+        with open(config_path) as f:
+            _config = json.load(f)
+    else:
+        _config = DEFAULT_CONFIG.copy()
 
-    tier_order = ["bike", "car", "van"]
-    weight_idx = tier_order.index(weight_tier)
-    size_idx = tier_order.index(size_tier)
-    return tier_order[max(weight_idx, size_idx)]
+    return _config
 
 
-def is_vehicle_compatible(vehicle_type: str, required: str) -> bool:
-    tier_order = ["bike", "car", "van"]
-    return tier_order.index(vehicle_type) >= tier_order.index(required)
+def reload_config():
+    global _config
+    _config = None
+    _load_config()
+
+
+def get_vehicle_tier_index(vehicle_type: str) -> int:
+    cfg = _load_config()
+    tiers = cfg.get("vehicle_tiers", DEFAULT_CONFIG["vehicle_tiers"])
+    try:
+        return tiers.index(vehicle_type.lower())
+    except ValueError:
+        return -1
+
+
+def get_required_vehicle(weight_kg: float, package_size: str) -> str:
+    cfg = _load_config()
+    vehicles = cfg.get("vehicles", DEFAULT_CONFIG["vehicles"])
+    size_order = cfg.get("size_order", DEFAULT_CONFIG["size_order"])
+
+    size_idx = size_order.index(package_size.lower()) if package_size.lower() in size_order else 0
+
+    for vtype in cfg.get("vehicle_tiers", DEFAULT_CONFIG["vehicle_tiers"]):
+        v = vehicles.get(vtype, {})
+        v_max_weight = v.get("max_weight_kg", 0)
+        v_max_size = v.get("max_size", "small")
+        v_size_idx = size_order.index(v_max_size.lower()) if v_max_size.lower() in size_order else 0
+
+        if weight_kg <= v_max_weight and size_idx <= v_size_idx:
+            return vtype
+
+    return "van"
+
+
+def is_vehicle_compatible(agent_vehicle: str, required_vehicle: str) -> bool:
+    agent_tier = get_vehicle_tier_index(agent_vehicle)
+    required_tier = get_vehicle_tier_index(required_vehicle)
+    return agent_tier >= required_tier >= 0

@@ -5,6 +5,8 @@ from app.schemas.agent import AgentResponse, AgentUpdate, AgentAssignmentRequest
 from app.services import agent_service, routing_service
 from app.dependencies.auth import get_current_user
 from app.models.user import User
+from app.models.delivery import Delivery, DeliveryStatus
+from app.models.route import Route, RouteStatus, RouteStop
 
 router = APIRouter()
 
@@ -54,23 +56,66 @@ def assign_deliveries(
 @router.post("/auto-assign")
 def auto_assign_all(db: Session = Depends(get_db)):
     from app.services import delivery_service as ds
+    from app.services import assignment_service as asvc
+    from app.services import routing_service
+
     pending = ds.get_pending_deliveries(db)
+    if not pending:
+        return {"assigned_count": 0, "routes_created": 0}
+
+    agents = agent_service.get_available_agents(db)
+    if not agents:
+        raise HTTPException(status_code=400, detail="No available agents")
+
+    agent_assignments = asvc._greedy_assign_deliveries(db, pending, agents)
+
     assigned = []
-    for d in pending:
-        agent_id = routing_service.assign_best_agent(db, d)
-        if agent_id:
-            agent_service.assign_delivery(db, d.id, agent_id)
-            assigned.append({"delivery_id": d.id, "agent_id": agent_id})
-    return {"assigned_count": len(assigned), "assignments": assigned}
+    routes_created = 0
+    for agent_id, d_ids in agent_assignments.items():
+        route = routing_service.generate_route(db, agent_id, d_ids)
+        if route:
+            routes_created += 1
+            for did in d_ids:
+                assigned.append({"delivery_id": did, "agent_id": agent_id, "route_id": route.id})
+
+    return {"assigned_count": len(assigned), "routes_created": routes_created, "assignments": assigned}
 
 
 @router.post("/{agent_id}/offline")
-def take_agent_offline(agent_id: int, db: Session = Depends(get_db)):
-    agent = agent_service.set_agent_offline(db, agent_id)
+def set_agent_offline(agent_id: int, db: Session = Depends(get_db)):
+    from app.models.route import Route, RouteStatus
+    from app.models.route import RouteStop
+
+    agent = agent_service.get_agent(db, agent_id)
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
-    return {
-        "detail": f"Agent {agent_id} set offline",
-        "routes_cancelled": len(agent.routes or []) if hasattr(agent, "routes") else 0,
-        "agent": AgentResponse.model_validate(agent),
-    }
+
+    agent.is_available = False
+    agent.status = "offline"
+    db.commit()
+
+    routes = db.query(Route).filter(
+        Route.agent_id == agent_id,
+        Route.status == RouteStatus.PLANNED,
+    ).all()
+
+    redistributed = 0
+    for route in routes:
+        pending_stops = (
+            db.query(RouteStop)
+            .filter(RouteStop.route_id == route.id)
+            .all()
+        )
+        for stop in pending_stops:
+            delivery = db.query(Delivery).filter(Delivery.id == stop.delivery_id).first()
+            if delivery and delivery.status == DeliveryStatus.ASSIGNED:
+                delivery.status = DeliveryStatus.PENDING
+                delivery.agent_id = None
+                delivery.assigned_route_id = None
+                redistributed += 1
+            db.delete(stop)
+
+        route.status = RouteStatus.CANCELLED
+        db.commit()
+
+    return {"detail": f"Agent {agent_id} set offline", "redistributed_count": redistributed}

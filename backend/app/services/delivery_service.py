@@ -14,7 +14,6 @@ def get_deliveries(
     status: Optional[str] = None,
     risk_category: Optional[str] = None,
     agent_id: Optional[int] = None,
-    warehouse_id: Optional[int] = None,
 ):
     query = db.query(Delivery)
     if status:
@@ -23,8 +22,6 @@ def get_deliveries(
         query = query.filter(Delivery.risk_category == risk_category)
     if agent_id:
         query = query.filter(Delivery.agent_id == agent_id)
-    if warehouse_id:
-        query = query.filter(Delivery.warehouse_id == warehouse_id)
     total = query.count()
     deliveries = (
         query.order_by(Delivery.id.desc())
@@ -42,7 +39,7 @@ def get_delivery(db: Session, delivery_id: int) -> Optional[Delivery]:
 def get_pending_deliveries(db: Session):
     return (
         db.query(Delivery)
-        .filter(Delivery.status == DeliveryStatus.PENDING)
+        .filter(Delivery.status.in_([DeliveryStatus.PENDING, DeliveryStatus.REROUTED]))
         .order_by(Delivery.risk_score.desc(), Delivery.created_at.asc())
         .all()
     )
@@ -50,21 +47,23 @@ def get_pending_deliveries(db: Session):
 
 def update_delivery_status(db: Session, delivery_id: int, status: DeliveryStatus):
     delivery = get_delivery(db, delivery_id)
-    if not delivery:
-        return None
-    delivery.status = status
-    if status == DeliveryStatus.DELIVERED:
-        delivery.delivered_at = datetime.utcnow()
-    db.commit()
-    db.refresh(delivery)
+    if delivery:
+        delivery.status = status
+        if status == DeliveryStatus.DELIVERED:
+            delivery.delivered_at = datetime.utcnow()
+        db.commit()
+        db.refresh(delivery)
 
-    if status == DeliveryStatus.FAILED and delivery.assigned_route_id:
-        from app.services import routing_service
-        routing_service.trigger_reroute(
-            db,
-            route_id=delivery.assigned_route_id,
-            failed_delivery_ids=[delivery.id],
-        )
+        if status == DeliveryStatus.FAILED and delivery.assigned_route_id:
+            from app.services import routing_service
+            routing_service.trigger_reroute(
+                db,
+                route_id=delivery.assigned_route_id,
+                failed_delivery_ids=[delivery.id],
+            )
+            delivery.status = DeliveryStatus.REROUTED
+            db.commit()
+            db.refresh(delivery)
 
     return delivery
 

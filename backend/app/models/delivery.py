@@ -14,7 +14,6 @@ class DeliveryStatus(str, enum.Enum):
     DELIVERED = "delivered"
     FAILED = "failed"
     REROUTED = "rerouted"
-    UNASSIGNED = "unassigned"
 
 
 class Delivery(Base):
