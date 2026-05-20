@@ -181,6 +181,8 @@ def create_manual_delivery(
     db.add(delivery)
     db.flush()
 
+    delivery.order_id = f"MAN-{delivery.id}"
+
     pred_data = delivery_service.delivery_to_prediction_data(delivery)
     try:
         result = ml_service.predict(pred_data)

@@ -128,7 +128,7 @@ export default function DeliveriesPage() {
                 <TableHead>Risk</TableHead>
                 <TableHead>Score</TableHead>
                 <TableHead>Status</TableHead>
-                <TableHead>Weather</TableHead>
+                <TableHead>Weight</TableHead>
                 <TableHead>Traffic</TableHead>
                 <TableHead>Distance</TableHead>
               </TableRow>
@@ -153,7 +153,7 @@ export default function DeliveriesPage() {
                     </TableCell>
                     <TableCell>{d.risk_score ? d.risk_score.toFixed(1) : "-"}</TableCell>
                     <TableCell><Badge variant="outline">{d.status || "N/A"}</Badge></TableCell>
-                    <TableCell>{d.weather || "-"}</TableCell>
+                    <TableCell>{d.package_weight ? `${d.package_weight} kg` : "-"}</TableCell>
                     <TableCell>{d.traffic_level || "-"}</TableCell>
                     <TableCell>{d.distance_km ? `${d.distance_km.toFixed(1)} km` : "-"}</TableCell>
                   </TableRow>
