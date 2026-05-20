@@ -53,45 +53,58 @@ def seed_warehouses(db: Session):
 
 def seed_agents(db: Session):
     warehouses = db.query(Warehouse).all()
-    agents = db.query(User).filter(User.role == Role.DELIVERY_AGENT).all()
+    if not warehouses:
+        return
+
+    # Delete existing agents for clean re-seed
+    existing = db.query(DeliveryAgent).count()
+    if existing:
+        db.query(DeliveryAgent).delete()
+        db.flush()
+
+    user_agent_user = db.query(User).filter(User.role == Role.DELIVERY_AGENT).first()
+    wh_user_idx = 0
+
+    WH_SHORT = {w.id: w.name.split()[0] for w in warehouses}
+
+    # Each warehouse: 2 bikes, 2 cars, 1 van
+    wh_template = [
+        ("bike", 0.002, 0.002, 0.90, 20),
+        ("bike", -0.002, -0.002, 0.80, 20),
+        ("car", 0.001, -0.001, 0.85, 30),
+        ("car", -0.001, 0.001, 0.88, 30),
+        ("van", 0.003, 0.000, 0.75, 40),
+    ]
+
     created = 0
-    for idx, user in enumerate(agents):
-        if not db.query(DeliveryAgent).filter(DeliveryAgent.user_id == user.id).first():
-            wh = warehouses[idx % len(warehouses)] if warehouses else None
+    for wh in warehouses:
+        short = WH_SHORT.get(wh.id, f"W{wh.id}")
+        for idx, (vtype, lat_off, lon_off, succ_rate, max_ld) in enumerate(wh_template):
+            user_id = None
+            name = f"{short}-{vtype.capitalize()}-{idx + 1}"
+
+            # Link user to first agent at Delhi North Hub (wh 1)
+            if wh.id == 1 and idx == 0 and user_agent_user:
+                user_id = user_agent_user.id
+                name = "Agent One"
+
             agent = DeliveryAgent(
-                user_id=user.id,
-                name=user.full_name,
-                vehicle_type="bike",
-                warehouse_id=wh.id if wh else None,
-                current_lat=28.7,
-                current_lon=77.1,
+                user_id=user_id,
+                name=name,
+                phone=f"98765{created + 1:05d}",
+                vehicle_type=vtype,
+                warehouse_id=wh.id,
+                current_lat=wh.lat + lat_off,
+                current_lon=wh.lon + lon_off,
                 current_load=0,
-                max_load=50,
-                success_rate=0.85,
+                max_load=max_ld,
+                success_rate=succ_rate,
                 is_available=True,
                 status=AgentStatus.AVAILABLE,
             )
             db.add(agent)
             created += 1
 
-    for i in range(5):
-        if not db.query(DeliveryAgent).filter(DeliveryAgent.name == f"Agent {i+2}").first():
-            wh = warehouses[(i + 1) % len(warehouses)] if warehouses else None
-            agent = DeliveryAgent(
-                name=f"Agent {i+2}",
-                phone=f"98765432{i}0",
-                vehicle_type=["bike", "car", "bike", "van", "bike"][i],
-                warehouse_id=wh.id if wh else None,
-                current_lat=28.6 + i * 0.1,
-                current_lon=77.0 + i * 0.1,
-                current_load=i * 5,
-                max_load=50,
-                success_rate=0.7 + i * 0.05,
-                is_available=True,
-                status=AgentStatus.AVAILABLE,
-            )
-            db.add(agent)
-            created += 1
     db.commit()
     print(f"  Seeded {created} agents")
 

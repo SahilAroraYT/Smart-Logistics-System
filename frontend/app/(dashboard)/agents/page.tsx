@@ -7,11 +7,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+  Select, SelectContent, SelectItem, SelectTrigger,
 } from "@/components/ui/select";
-import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
-} from "@/components/ui/table";
 
 export default function AgentsPage() {
   const [agents, setAgents] = useState<Agent[]>([]);
@@ -88,11 +85,12 @@ export default function AgentsPage() {
                 <div className="flex flex-col gap-1">
                   <span className="text-zinc-500 text-xs">Warehouse</span>
                   <Select
+                    key={`agent-${agent.id}-wh-${warehouses.length}`}
                     value={agent.warehouse_id?.toString() || ""}
                     onValueChange={(v) => handleWarehouseChange(agent.id, v ?? "")}
                   >
                     <SelectTrigger className="w-full h-7 text-xs">
-                      <SelectValue placeholder={wh ? wh.name : "Not assigned"} />
+                      <span>{wh?.name || "Not assigned"}</span>
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="">Not assigned</SelectItem>
