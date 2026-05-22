@@ -20,19 +20,28 @@ def seed_users(db: Session):
         ("admin@logistics.com", "admin123", "System Admin", Role.ADMIN),
         ("manager@logistics.com", "manager123", "Operations Manager", Role.OPERATIONS_MANAGER),
         ("supervisor@logistics.com", "supervisor123", "Delivery Supervisor", Role.DELIVERY_SUPERVISOR),
-        ("agent1@logistics.com", "agent123", "Agent One", Role.DELIVERY_AGENT),
     ]
     for email, password, name, role in users:
         if not db.query(User).filter(User.email == email).first():
-            user = User(
+            db.add(User(
                 email=email,
                 password_hash=auth_service.hash_password(password),
                 full_name=name,
                 role=role,
-            )
-            db.add(user)
+            ))
+
+    for i in range(1, 21):
+        email = f"agent{i}@logistics.com"
+        if not db.query(User).filter(User.email == email).first():
+            db.add(User(
+                email=email,
+                password_hash=auth_service.hash_password("agent123"),
+                full_name=f"Agent {i}",
+                role=Role.DELIVERY_AGENT,
+            ))
+
     db.commit()
-    print(f"  Seeded {len(users)} users")
+    print("  Seeded 23 users (3 staff + 20 agents)")
 
 
 def seed_warehouses(db: Session):
@@ -62,8 +71,12 @@ def seed_agents(db: Session):
         db.query(DeliveryAgent).delete()
         db.flush()
 
-    user_agent_user = db.query(User).filter(User.role == Role.DELIVERY_AGENT).first()
-    wh_user_idx = 0
+    agent_users = (
+        db.query(User)
+        .filter(User.role == Role.DELIVERY_AGENT)
+        .order_by(User.id)
+        .all()
+    )
 
     WH_SHORT = {w.id: w.name.split()[0] for w in warehouses}
 
@@ -80,13 +93,9 @@ def seed_agents(db: Session):
     for wh in warehouses:
         short = WH_SHORT.get(wh.id, f"W{wh.id}")
         for idx, (vtype, lat_off, lon_off, succ_rate, max_ld) in enumerate(wh_template):
-            user_id = None
-            name = f"{short}-{vtype.capitalize()}-{idx + 1}"
-
-            # Link user to first agent at Delhi North Hub (wh 1)
-            if wh.id == 1 and idx == 0 and user_agent_user:
-                user_id = user_agent_user.id
-                name = "Agent One"
+            # Link agents to users sequentially (agent1@ -> first agent, etc.)
+            user_id = agent_users[created].id if created < len(agent_users) else None
+            name = "Agent One" if created == 0 else f"{short}-{vtype.capitalize()}-{idx + 1}"
 
             agent = DeliveryAgent(
                 user_id=user_id,
@@ -136,6 +145,7 @@ def seed_deliveries(db: Session):
         db.add(Delivery(
             order_id=str(int(row["order_id"])),
             customer_id=int(row["customer_id"]),
+            customer_name=f"Customer-{int(row['customer_id'])}",
             customer_lat=row["customer_lat"],
             customer_lon=row["customer_lon"],
             warehouse_lat=row["warehouse_lat"],

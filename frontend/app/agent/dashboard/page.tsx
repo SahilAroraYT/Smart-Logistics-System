@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import dynamic from "next/dynamic";
 import { api } from "@/lib/api";
 import { L } from "@/lib/leaflet";
-import type { AgentDashboardData, Delivery } from "@/types";
+import type { AgentDashboardData, Delivery, Warehouse } from "@/types";
 import "leaflet/dist/leaflet.css";
 import { CheckCircle, MapPin, Package, AlertCircle } from "lucide-react";
 
@@ -20,12 +20,30 @@ const RISK_COLORS: Record<string, string> = {
   HIGH: "#ef4444",
 };
 
-function RiskIcon(color: string) {
+const WAREHOUSE_COLOR = "#2563eb";
+
+function NumberedRiskIcon(num: number, color: string) {
   return L.divIcon({
     className: "custom-marker",
-    html: `<div style="background:${color};width:16px;height:16px;border-radius:50%;border:3px solid white;box-shadow:0 2px 8px rgba(0,0,0,0.3)"></div>`,
-    iconSize: [16, 16],
-    iconAnchor: [8, 8],
+    html: `<div style="background:${color};width:24px;height:24px;border-radius:50%;border:3px solid white;box-shadow:0 2px 8px rgba(0,0,0,0.3);display:flex;align-items:center;justify-content:center;color:white;font-size:12px;font-weight:700">${num}</div>`,
+    iconSize: [24, 24],
+    iconAnchor: [12, 12],
+  });
+}
+
+function WarehouseIcon() {
+  return L.divIcon({
+    className: "custom-warehouse-marker",
+    html: `<div style="display:flex;flex-direction:column;align-items:center;gap:0">
+      <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#2563eb" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="3" y="3" width="18" height="18" rx="2"/>
+        <path d="M3 9h18"/>
+        <path d="M9 3v18"/>
+        <path d="M15 3v18"/>
+      </svg>
+    </div>`,
+    iconSize: [30, 30],
+    iconAnchor: [15, 15],
   });
 }
 
@@ -74,10 +92,12 @@ function AllCompletedState() {
 
 function DeliveryCard({
   delivery,
+  stopOrder,
   completing,
   onComplete,
 }: {
   delivery: Delivery;
+  stopOrder?: number;
   completing: boolean;
   onComplete: () => void;
 }) {
@@ -90,9 +110,12 @@ function DeliveryCard({
       <div className="mb-2 flex items-start justify-between gap-2">
         <div className="min-w-0">
           <p className="truncate font-semibold text-zinc-800">
+            {stopOrder != null ? `#${stopOrder} ` : ""}
             {delivery.order_id || `Order #${delivery.id}`}
           </p>
-          <p className="text-sm text-zinc-500">{delivery.customer_name || "Unknown"}</p>
+          <p className="text-sm text-zinc-500">
+            {delivery.customer_name || `Customer #${delivery.customer_id}`}
+          </p>
         </div>
         {delivery.risk_category && (
           <span
@@ -134,6 +157,7 @@ function DeliveryCard({
 
 export default function AgentDashboardPage() {
   const [data, setData] = useState<AgentDashboardData | null>(null);
+  const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [completing, setCompleting] = useState<Record<number, boolean>>({});
@@ -143,13 +167,20 @@ export default function AgentDashboardPage() {
     setLoading(true);
     setError(null);
     try {
-      const result = await api.agent.dashboard();
+      const [result, whList] = await Promise.all([
+        api.agent.dashboard(),
+        api.warehouses.list(),
+      ]);
       setData(result);
+      setWarehouses(whList);
+
       if (result.deliveries.length > 0) {
         const first = result.deliveries[0];
         if (first.customer_lat && first.customer_lon) {
           setCenter([first.customer_lat, first.customer_lon]);
         }
+      } else if (result.agent.current_lat && result.agent.current_lon) {
+        setCenter([result.agent.current_lat, result.agent.current_lon]);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load dashboard");
@@ -187,6 +218,10 @@ export default function AgentDashboardPage() {
     ?.filter((s) => data.deliveries.some((d) => d.id === s.delivery_id))
     .sort((a, b) => a.stop_order - b.stop_order) ?? [];
 
+  const agentWarehouse = data?.agent.warehouse_id
+    ? warehouses.find((wh) => wh.id === data.agent.warehouse_id)
+    : null;
+
   if (loading) return <LoadingState />;
   if (error) return <ErrorState message={error} onRetry={fetchDashboard} />;
   if (!data) return null;
@@ -212,6 +247,21 @@ export default function AgentDashboardPage() {
               pathOptions={{ color: "#3b82f6", weight: 4, opacity: 0.7 }}
             />
           )}
+          {agentWarehouse && (
+            <Marker
+              position={[agentWarehouse.lat, agentWarehouse.lon]}
+              icon={WarehouseIcon()}
+            >
+              <Popup>
+                <div className="text-sm">
+                  <p className="font-semibold">{agentWarehouse.name}</p>
+                  {agentWarehouse.city && (
+                    <p className="text-xs text-zinc-500">{agentWarehouse.city}</p>
+                  )}
+                </div>
+              </Popup>
+            </Marker>
+          )}
           {routeOrderedDeliveries.map((stop) => {
             if (!stop.customer_lat || !stop.customer_lon) return null;
             const delivery = data.deliveries.find((d) => d.id === stop.delivery_id);
@@ -222,15 +272,12 @@ export default function AgentDashboardPage() {
               <Marker
                 key={stop.delivery_id}
                 position={[stop.customer_lat, stop.customer_lon]}
-                icon={RiskIcon(riskColor)}
+                icon={NumberedRiskIcon(stop.stop_order, riskColor)}
               >
                 <Popup>
                   <div className="min-w-[180px] text-sm">
                     <p className="font-semibold">
-                      {stop.delivery_order_id || `Delivery #${stop.delivery_id}`}
-                    </p>
-                    <p className="mb-1 text-xs text-zinc-500">
-                      Stop #{stop.stop_order}
+                      #{stop.stop_order} {stop.delivery_order_id || `Delivery #${stop.delivery_id}`}
                     </p>
                     {delivery?.customer_name && (
                       <p className="text-xs text-zinc-600">{delivery.customer_name}</p>
@@ -287,6 +334,7 @@ export default function AgentDashboardPage() {
                     <DeliveryCard
                       key={delivery.id}
                       delivery={delivery}
+                      stopOrder={stop.stop_order}
                       completing={!!completing[delivery.id]}
                       onComplete={() => handleComplete(delivery.id)}
                     />
