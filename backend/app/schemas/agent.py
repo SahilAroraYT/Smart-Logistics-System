@@ -1,7 +1,11 @@
+from __future__ import annotations
 from datetime import datetime
 from typing import Optional
 
 from pydantic import BaseModel
+
+from app.schemas.delivery import DeliveryResponse
+from app.schemas.route import RouteDetailResponse
 
 
 class AgentResponse(BaseModel):
@@ -44,3 +48,11 @@ class AgentAssignmentResponse(BaseModel):
     agent_id: int
     assigned_count: int
     deliveries: list[int]
+
+
+class AgentDashboardResponse(BaseModel):
+    agent: AgentResponse
+    deliveries: list[DeliveryResponse]
+    route: Optional[RouteDetailResponse] = None
+
+    model_config = {"from_attributes": True}

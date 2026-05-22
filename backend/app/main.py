@@ -4,7 +4,7 @@ from fastapi import FastAPI
 
 from app.config import settings
 from app.middleware.cors import setup_cors
-from app.routers import auth, deliveries, agents, routes, alerts, audit, assignments, warehouses
+from app.routers import auth, deliveries, agents, routes, alerts, audit, assignments, warehouses, agent
 from app.services import ml_service
 
 
@@ -30,3 +30,4 @@ app.include_router(alerts.router, prefix="/api/alerts", tags=["alerts"])
 app.include_router(audit.router, prefix="/api/audit", tags=["audit"])
 app.include_router(assignments.router, prefix="/api/assignments", tags=["assignments"])
 app.include_router(warehouses.router, prefix="/api/warehouses", tags=["warehouses"])
+app.include_router(agent.router, prefix="/api/agent", tags=["agent"])

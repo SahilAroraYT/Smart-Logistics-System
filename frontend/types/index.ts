@@ -224,3 +224,9 @@ export interface AssignmentSessionDetail {
   agents: AgentGroupInfo[];
   routes: RouteInSession[];
 }
+
+export interface AgentDashboardData {
+  agent: Agent;
+  deliveries: Delivery[];
+  route: RouteDetail | null;
+}

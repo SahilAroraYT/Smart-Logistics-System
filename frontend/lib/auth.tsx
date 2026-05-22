@@ -7,14 +7,14 @@ import type { User } from "@/types";
 interface AuthContextType {
   user: User | null;
   loading: boolean;
-  login: (email: string, password: string) => Promise<void>;
+  login: (email: string, password: string) => Promise<User>;
   logout: () => void;
 }
 
 const AuthContext = createContext<AuthContextType>({
   user: null,
   loading: true,
-  login: async () => {},
+  login: async () => { throw new Error("AuthProvider not mounted"); },
   logout: () => {},
 });
 
@@ -22,12 +22,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const fetchUser = useCallback(async () => {
+  const fetchUser = useCallback(async (): Promise<User | null> => {
     try {
       const data = await api.auth.me();
       setUser(data);
+      return data;
     } catch {
       setUser(null);
+      return null;
     } finally {
       setLoading(false);
     }
@@ -42,10 +44,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [fetchUser]);
 
-  const login = async (email: string, password: string) => {
+  const login = async (email: string, password: string): Promise<User> => {
     const { access_token } = await api.auth.login(email, password);
     localStorage.setItem("token", access_token);
-    await fetchUser();
+    const userData = await fetchUser();
+    if (!userData) throw new Error("Failed to fetch user after login");
+    return userData;
   };
 
   const logout = () => {

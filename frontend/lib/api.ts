@@ -1,4 +1,4 @@
-import type { User, Delivery, Agent, Alert, AuditLog, Route, PredictionResult, AssignmentSession, AssignmentSessionDetail, RouteDetail, Warehouse, WarehouseCreate, WarehouseUpdate } from "@/types";
+import type { User, Delivery, Agent, Alert, AuditLog, Route, PredictionResult, AssignmentSession, AssignmentSessionDetail, RouteDetail, Warehouse, WarehouseCreate, WarehouseUpdate, AgentDashboardData } from "@/types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api";
 
@@ -78,6 +78,12 @@ export const api = {
     },
     acknowledge: (id: number) =>
       fetchAPI<Alert>(`/alerts/${id}/acknowledge`, { method: "POST" }),
+  },
+  agent: {
+    me: () => fetchAPI<Agent>("/agent/me"),
+    dashboard: () => fetchAPI<AgentDashboardData>("/agent/dashboard"),
+    completeDelivery: (deliveryId: number) =>
+      fetchAPI<Delivery>(`/agent/deliveries/${deliveryId}/complete`, { method: "POST" }),
   },
   assignments: {
     list: () => fetchAPI<AssignmentSession[]>("/assignments/"),
