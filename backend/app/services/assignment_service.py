@@ -2,6 +2,7 @@ from datetime import datetime
 from typing import Optional
 
 import httpx
+from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from app.models.assignment import AssignmentSession, SessionDelivery
@@ -13,28 +14,51 @@ from app.services import delivery_service, agent_service, routing_service, ml_se
 
 
 NOMINATIM_BASE = "https://nominatim.openstreetmap.org/search"
+NOMINATIM_REVERSE_BASE = "https://nominatim.openstreetmap.org/reverse"
+GEO_HEADERS = {"User-Agent": "SmartLogisticsSystem/1.0"}
 
 
-def _geocode_address(street: str, city: str, pincode: str) -> tuple[Optional[float], Optional[float]]:
-    """Resolve structured address to (lat, lon) via Nominatim."""
+def _geocode_address(
+    street: str, city: str, pincode: str,
+) -> tuple[Optional[float], Optional[float], Optional[str]]:
+    """Resolve structured address to (lat, lon, country) via Nominatim."""
     parts = [p for p in [street, city, pincode] if p]
     if not parts:
-        return None, None
+        return None, None, None
     query = ", ".join(parts)
     try:
         with httpx.Client(timeout=10.0) as client:
             resp = client.get(
                 NOMINATIM_BASE,
-                params={"q": query, "format": "json", "limit": 1},
-                headers={"User-Agent": "SmartLogisticsSystem/1.0"},
+                params={"q": query, "format": "json", "limit": 1, "addressdetails": 1},
+                headers=GEO_HEADERS,
             )
             resp.raise_for_status()
             data = resp.json()
             if data:
-                return float(data[0]["lat"]), float(data[0]["lon"])
+                lat = float(data[0]["lat"])
+                lon = float(data[0]["lon"])
+                country = data[0].get("address", {}).get("country")
+                return lat, lon, country
     except Exception:
         pass
-    return None, None
+    return None, None, None
+
+
+def _reverse_geocode_country(lat: float, lon: float) -> Optional[str]:
+    """Get country name from coordinates via Nominatim reverse geocode."""
+    try:
+        with httpx.Client(timeout=10.0) as client:
+            resp = client.get(
+                NOMINATIM_REVERSE_BASE,
+                params={"lat": lat, "lon": lon, "format": "json"},
+                headers=GEO_HEADERS,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            return data.get("address", {}).get("country")
+    except Exception:
+        return None
 
 
 def create_session(
@@ -130,11 +154,39 @@ def create_manual_delivery(
     package_weight: float = 1.0,
 ) -> Delivery:
     # Geocode if lat/lon not provided and address is available
-    resolved_lat, resolved_lon = customer_lat, customer_lon
+    resolved_lat, resolved_lon, resolved_country = customer_lat, customer_lon, None
     if resolved_lat is None or resolved_lon is None:
-        resolved_lat, resolved_lon = _geocode_address(
+        resolved_lat, resolved_lon, resolved_country = _geocode_address(
             delivery_street or "", delivery_city or "", delivery_pincode or ""
         )
+
+    # Reject addresses outside India — use reverse geocode on coords
+    # for precise country determination (handles India-Pakistan border overlap)
+    if resolved_lat is not None and resolved_lon is not None:
+        country = resolved_country or _reverse_geocode_country(resolved_lat, resolved_lon)
+        if country and country.lower() != "india":
+            raise HTTPException(
+                status_code=400,
+                detail="We do not offer services outside India currently",
+            )
+
+    # Calculate distance from nearest warehouse
+    warehouse_lat, warehouse_lon, distance_km, warehouse_id = 28.7, 77.1, 5.0, None
+    if resolved_lat is not None and resolved_lon is not None:
+        warehouses = db.query(Warehouse).all()
+        if warehouses:
+            nearest = min(
+                warehouses,
+                key=lambda w: clustering_service.haversine_km(
+                    resolved_lat, resolved_lon, w.lat, w.lon
+                ),
+            )
+            warehouse_id = nearest.id
+            warehouse_lat = nearest.lat
+            warehouse_lon = nearest.lon
+            distance_km = clustering_service.haversine_km(
+                resolved_lat, resolved_lon, nearest.lat, nearest.lon
+            )
 
     delivery = Delivery(
         customer_id=99999,
@@ -144,9 +196,10 @@ def create_manual_delivery(
         delivery_pincode=delivery_pincode,
         customer_lat=resolved_lat,
         customer_lon=resolved_lon,
-        warehouse_lat=28.7,
-        warehouse_lon=77.1,
-        distance_km=5.0,
+        warehouse_lat=warehouse_lat,
+        warehouse_lon=warehouse_lon,
+        distance_km=distance_km,
+        warehouse_id=warehouse_id,
         package_weight=package_weight,
         package_size="medium",
         delivery_zone="Zone_A",
