@@ -131,3 +131,30 @@ def complete_delivery(
 
     updated = delivery_service.update_delivery_status(db, delivery_id, DeliveryStatus.DELIVERED)
     return DeliveryResponse.model_validate(updated)
+
+
+@router.post("/deliveries/{delivery_id}/fail", response_model=DeliveryResponse)
+def fail_delivery(
+    delivery_id: int,
+    agent: DeliveryAgent = Depends(get_current_agent),
+    db: Session = Depends(get_db),
+):
+    delivery = delivery_service.get_delivery(db, delivery_id)
+    if not delivery:
+        raise HTTPException(status_code=404, detail="Delivery not found")
+    if delivery.agent_id != agent.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This delivery is not assigned to you",
+        )
+    if delivery.status == DeliveryStatus.FAILED:
+        return DeliveryResponse.model_validate(delivery)
+
+    if delivery.status != DeliveryStatus.ASSIGNED:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Cannot fail delivery with status '{delivery.status}'. Only assigned deliveries can be failed.",
+        )
+
+    updated = delivery_service.update_delivery_status(db, delivery_id, DeliveryStatus.FAILED)
+    return DeliveryResponse.model_validate(updated)

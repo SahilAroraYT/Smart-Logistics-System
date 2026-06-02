@@ -61,8 +61,6 @@ def update_delivery_status(db: Session, delivery_id: int, status: DeliveryStatus
                 route_id=delivery.assigned_route_id,
                 failed_delivery_ids=[delivery.id],
             )
-            delivery.status = DeliveryStatus.REROUTED
-            db.commit()
             db.refresh(delivery)
 
     return delivery

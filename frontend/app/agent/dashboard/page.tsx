@@ -6,7 +6,7 @@ import { api } from "@/lib/api";
 import { L } from "@/lib/leaflet";
 import type { AgentDashboardData, Delivery, Warehouse } from "@/types";
 import "leaflet/dist/leaflet.css";
-import { CheckCircle, MapPin, Package, AlertCircle } from "lucide-react";
+import { CheckCircle, XCircle, MapPin, Package, AlertCircle } from "lucide-react";
 
 const MapContainer = dynamic(() => import("react-leaflet").then((m) => m.MapContainer), { ssr: false });
 const TileLayer = dynamic(() => import("react-leaflet").then((m) => m.TileLayer), { ssr: false });
@@ -94,12 +94,16 @@ function DeliveryCard({
   delivery,
   stopOrder,
   completing,
+  failing,
   onComplete,
+  onFail,
 }: {
   delivery: Delivery;
   stopOrder?: number;
   completing: boolean;
+  failing: boolean;
   onComplete: () => void;
+  onFail: () => void;
 }) {
   const riskColor = delivery.risk_category
     ? RISK_COLORS[delivery.risk_category] || "#888"
@@ -139,18 +143,32 @@ function DeliveryCard({
         )}
         {delivery.distance_km && <span>{delivery.distance_km.toFixed(1)} km</span>}
       </div>
-      <button
-        onClick={onComplete}
-        disabled={completing}
-        className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-green-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-50"
-      >
-        {completing ? (
-          <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
-        ) : (
-          <CheckCircle className="h-4 w-4" />
-        )}
-        {completing ? "Completing..." : "Mark Completed"}
-      </button>
+      <div className="flex gap-2">
+        <button
+          onClick={onComplete}
+          disabled={completing || failing}
+          className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-green-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {completing ? (
+            <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+          ) : (
+            <CheckCircle className="h-4 w-4" />
+          )}
+          {completing ? "Completing..." : "Mark Completed"}
+        </button>
+        <button
+          onClick={onFail}
+          disabled={failing || completing}
+          className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-red-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {failing ? (
+            <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+          ) : (
+            <XCircle className="h-4 w-4" />
+          )}
+          {failing ? "Failing..." : "Mark Failed"}
+        </button>
+      </div>
     </div>
   );
 }
@@ -161,6 +179,7 @@ export default function AgentDashboardPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [completing, setCompleting] = useState<Record<number, boolean>>({});
+  const [failing, setFailing] = useState<Record<number, boolean>>({});
   const [center, setCenter] = useState<[number, number]>([28.65, 77.1]);
 
   const fetchDashboard = useCallback(async () => {
@@ -202,6 +221,18 @@ export default function AgentDashboardPage() {
       console.error("Failed to complete delivery:", err);
     } finally {
       setCompleting((prev) => ({ ...prev, [deliveryId]: false }));
+    }
+  };
+
+  const handleFail = async (deliveryId: number) => {
+    setFailing((prev) => ({ ...prev, [deliveryId]: true }));
+    try {
+      await api.agent.failDelivery(deliveryId);
+      await fetchDashboard();
+    } catch (err) {
+      console.error("Failed to fail delivery:", err);
+    } finally {
+      setFailing((prev) => ({ ...prev, [deliveryId]: false }));
     }
   };
 
@@ -296,18 +327,32 @@ export default function AgentDashboardPage() {
                         Weight: {delivery.package_weight} kg
                       </p>
                     )}
-                    <button
-                      onClick={() => handleComplete(stop.delivery_id)}
-                      disabled={completing[stop.delivery_id]}
-                      className="mt-2 flex w-full items-center justify-center gap-1 rounded bg-green-600 px-2 py-1.5 text-xs font-medium text-white hover:bg-green-700 disabled:opacity-50"
-                    >
-                      {completing[stop.delivery_id] ? (
-                        <div className="h-3 w-3 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                      ) : (
-                        <CheckCircle className="h-3 w-3" />
-                      )}
-                      Mark Completed
-                    </button>
+                    <div className="mt-2 flex gap-1.5">
+                      <button
+                        onClick={() => handleComplete(stop.delivery_id)}
+                        disabled={completing[stop.delivery_id] || failing[stop.delivery_id]}
+                        className="flex flex-1 items-center justify-center gap-1 rounded bg-green-600 px-2 py-1.5 text-xs font-medium text-white hover:bg-green-700 disabled:opacity-50"
+                      >
+                        {completing[stop.delivery_id] ? (
+                          <div className="h-3 w-3 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                        ) : (
+                          <CheckCircle className="h-3 w-3" />
+                        )}
+                        Complete
+                      </button>
+                      <button
+                        onClick={() => handleFail(stop.delivery_id)}
+                        disabled={failing[stop.delivery_id] || completing[stop.delivery_id]}
+                        className="flex flex-1 items-center justify-center gap-1 rounded bg-red-600 px-2 py-1.5 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-50"
+                      >
+                        {failing[stop.delivery_id] ? (
+                          <div className="h-3 w-3 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                        ) : (
+                          <XCircle className="h-3 w-3" />
+                        )}
+                        Failed
+                      </button>
+                    </div>
                   </div>
                 </Popup>
               </Marker>
@@ -336,16 +381,20 @@ export default function AgentDashboardPage() {
                       delivery={delivery}
                       stopOrder={stop.stop_order}
                       completing={!!completing[delivery.id]}
+                      failing={!!failing[delivery.id]}
                       onComplete={() => handleComplete(delivery.id)}
+                      onFail={() => handleFail(delivery.id)}
                     />
-                  );
+                  )
                 })
               : data.deliveries.map((delivery) => (
                   <DeliveryCard
                     key={delivery.id}
                     delivery={delivery}
                     completing={!!completing[delivery.id]}
+                    failing={!!failing[delivery.id]}
                     onComplete={() => handleComplete(delivery.id)}
+                    onFail={() => handleFail(delivery.id)}
                   />
                 ))
           )}

@@ -84,6 +84,8 @@ export const api = {
     dashboard: () => fetchAPI<AgentDashboardData>("/agent/dashboard"),
     completeDelivery: (deliveryId: number) =>
       fetchAPI<Delivery>(`/agent/deliveries/${deliveryId}/complete`, { method: "POST" }),
+    failDelivery: (deliveryId: number) =>
+      fetchAPI<Delivery>(`/agent/deliveries/${deliveryId}/fail`, { method: "POST" }),
   },
   assignments: {
     list: () => fetchAPI<AssignmentSession[]>("/assignments/"),
