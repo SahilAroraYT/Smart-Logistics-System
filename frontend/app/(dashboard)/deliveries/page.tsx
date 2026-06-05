@@ -34,7 +34,7 @@ export default function DeliveriesPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const params: Record<string, string> = { page: "1", page_size: "100" };
+    const params: Record<string, string> = { page: "1", page_size: "1000" };
     if (filter !== "all") params.status = filter;
     api.deliveries.list(params)
       .then((data: { deliveries: Delivery[] }) => {
@@ -55,10 +55,11 @@ export default function DeliveriesPage() {
   };
 
   const toggleAll = () => {
-    if (selected.size === deliveries.length) {
+    const pending = deliveries.filter((d) => d.status === "pending");
+    if (selected.size === pending.length) {
       setSelected(new Set());
     } else {
-      setSelected(new Set(deliveries.filter((d) => d.status === "pending").map((d) => d.id)));
+      setSelected(new Set(pending.map((d) => d.id)));
     }
   };
 
@@ -91,7 +92,7 @@ export default function DeliveriesPage() {
             Assign to Route
           </Button>
           <AddManualOrderDialog onAdded={() => {
-            const params: Record<string, string> = { page: "1", page_size: "100" };
+            const params: Record<string, string> = { page: "1", page_size: "1000" };
             if (filter !== "all") params.status = filter;
             api.deliveries.list(params).then((data: { deliveries: Delivery[] }) => {
               setDeliveries(data.deliveries);
