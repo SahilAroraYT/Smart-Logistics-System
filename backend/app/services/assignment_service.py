@@ -21,27 +21,43 @@ GEO_HEADERS = {"User-Agent": "SmartLogisticsSystem/1.0"}
 def _geocode_address(
     street: str, city: str, pincode: str,
 ) -> tuple[Optional[float], Optional[float], Optional[str]]:
-    """Resolve structured address to (lat, lon, country) via Nominatim."""
+    """Resolve structured address to (lat, lon, country) via Nominatim.
+
+    Tries progressively simpler queries if the full address fails:
+    1. street, city, pincode (all parts)
+    2. city, pincode
+    3. city only
+    """
     parts = [p for p in [street, city, pincode] if p]
     if not parts:
         return None, None, None
-    query = ", ".join(parts)
-    try:
-        with httpx.Client(timeout=10.0) as client:
-            resp = client.get(
-                NOMINATIM_BASE,
-                params={"q": query, "format": "json", "limit": 1, "addressdetails": 1},
-                headers=GEO_HEADERS,
-            )
-            resp.raise_for_status()
-            data = resp.json()
-            if data:
-                lat = float(data[0]["lat"])
-                lon = float(data[0]["lon"])
-                country = data[0].get("address", {}).get("country")
-                return lat, lon, country
-    except Exception:
-        pass
+
+    queries = [
+        ", ".join(parts),
+        ", ".join(p for p in [city, pincode] if p),
+        city,
+    ]
+
+    for query in queries:
+        if not query:
+            continue
+        try:
+            with httpx.Client(timeout=10.0) as client:
+                resp = client.get(
+                    NOMINATIM_BASE,
+                    params={"q": query, "format": "json", "limit": 1, "addressdetails": 1},
+                    headers=GEO_HEADERS,
+                )
+                resp.raise_for_status()
+                data = resp.json()
+                if data:
+                    lat = float(data[0]["lat"])
+                    lon = float(data[0]["lon"])
+                    country = data[0].get("address", {}).get("country")
+                    return lat, lon, country
+        except Exception:
+            continue
+
     return None, None, None
 
 
@@ -160,15 +176,22 @@ def create_manual_delivery(
             delivery_street or "", delivery_city or "", delivery_pincode or ""
         )
 
+    if resolved_lat is None or resolved_lon is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Could not resolve coordinates from the provided address. "
+                   "Please provide coordinates manually or use a more specific address "
+                   "(street, city, pincode).",
+        )
+
     # Reject addresses outside India — use reverse geocode on coords
     # for precise country determination (handles India-Pakistan border overlap)
-    if resolved_lat is not None and resolved_lon is not None:
-        country = resolved_country or _reverse_geocode_country(resolved_lat, resolved_lon)
-        if country and country.lower() != "india":
-            raise HTTPException(
-                status_code=400,
-                detail="We do not offer services outside India currently",
-            )
+    country = resolved_country or _reverse_geocode_country(resolved_lat, resolved_lon)
+    if country and country.lower() != "india":
+        raise HTTPException(
+            status_code=400,
+            detail="We do not offer services outside India currently",
+        )
 
     # Calculate distance from nearest warehouse
     warehouse_lat, warehouse_lon, distance_km, warehouse_id = 28.7, 77.1, 5.0, None
@@ -247,6 +270,7 @@ def create_manual_delivery(
     if session_id and session_id > 0:
         sd = SessionDelivery(session_id=session_id, delivery_id=delivery.id)
         db.add(sd)
+    # Standalone deliveries stay PENDING — user assigns them via session flow
     db.commit()
     db.refresh(delivery)
     return delivery
