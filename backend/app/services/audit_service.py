@@ -1,6 +1,11 @@
+from datetime import datetime, timedelta, timezone
 from typing import Optional
+
 from sqlalchemy.orm import Session
+
 from app.models.audit_log import AuditLog
+
+IST = timezone(timedelta(hours=5, minutes=30))
 
 
 def log_action(
@@ -17,6 +22,7 @@ def log_action(
         entity_type=entity_type,
         entity_id=entity_id,
         extra_data=extra_data,
+        timestamp=datetime.now(IST),
     )
     db.add(log)
     db.commit()
