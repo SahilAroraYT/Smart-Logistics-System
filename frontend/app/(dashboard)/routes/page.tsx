@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 import type { Route } from "@/types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -11,6 +12,7 @@ import {
 } from "@/components/ui/table";
 
 export default function RoutesPage() {
+  const router = useRouter();
   const [routes, setRoutes] = useState<Route[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -52,8 +54,8 @@ export default function RoutesPage() {
             </TableHeader>
             <TableBody>
               {routes.map((r) => (
-                <TableRow key={r.id}>
-                  <TableCell className="font-medium">{r.name}</TableCell>
+                <TableRow key={r.id} className="cursor-pointer hover:bg-zinc-50" onClick={() => router.push(`/map?route_id=${r.id}`)}>
+                  <TableCell className="font-medium text-blue-600 underline underline-offset-2">{r.name}</TableCell>
                   <TableCell>{r.agent_id}</TableCell>
                   <TableCell><Badge variant="outline">{r.status}</Badge></TableCell>
                   <TableCell>{r.total_distance ? `${r.total_distance.toFixed(1)} km` : "-"}</TableCell>
