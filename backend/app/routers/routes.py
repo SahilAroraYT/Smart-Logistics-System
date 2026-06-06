@@ -6,7 +6,7 @@ from app.database import get_db
 from app.dependencies.auth import get_current_user
 from app.models.user import User
 from app.schemas.route import RouteResponse, RouteGenerationRequest, RouteGenerationResponse, RouteDetailResponse, RouteStopInfo
-from app.services import routing_service, delivery_service, audit_service
+from app.services import routing_service, delivery_service, agent_service, audit_service
 from app.models.route import Route, RouteStop
 from app.models.delivery import DeliveryStatus
 
@@ -69,13 +69,17 @@ def generate_route(
     if not pending:
         raise HTTPException(status_code=400, detail="No pending deliveries")
 
-    delivery_ids = [d.id for d in pending[:payload.max_deliveries]]
-
     agent_id = payload.agent_id
-    if not agent_id and delivery_ids:
+    if not agent_id:
         agent_id = routing_service.assign_best_agent(db, pending[0])
     if not agent_id:
         raise HTTPException(status_code=400, detail="No available agents")
+
+    agent = agent_service.get_agent(db, agent_id)
+    same_wh_deliveries = [d for d in pending[:payload.max_deliveries] if agent and d.warehouse_id == agent.warehouse_id]
+    if not same_wh_deliveries:
+        raise HTTPException(status_code=400, detail="No pending deliveries at this agent's warehouse")
+    delivery_ids = [d.id for d in same_wh_deliveries]
 
     route = routing_service.generate_route(db, agent_id, delivery_ids)
     if not route:

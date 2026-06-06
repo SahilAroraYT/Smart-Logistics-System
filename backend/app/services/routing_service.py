@@ -21,25 +21,8 @@ def haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
 
-TRAFFIC_PENALTY = {"low": 0.0, "medium": 0.5, "high": 1.0}
-WEATHER_PENALTY = {"clear": 0.0, "rain": 0.5, "fog": 0.8}
-
-
 def compute_delivery_cost(delivery: Delivery) -> float:
-    risk_normalized = (delivery.risk_score or 50) / 100.0
-    traffic = TRAFFIC_PENALTY.get(delivery.traffic_level or "low", 0.0)
-    weather = WEATHER_PENALTY.get(delivery.weather or "clear", 0.0)
-    agent_load = 0.0
-    if delivery.agent_id:
-        agent_load = 0.3
-    distance = delivery.distance_km or 1.0
-    return (
-        distance * 0.4
-        + risk_normalized * 0.3
-        + traffic * 0.1
-        + weather * 0.1
-        + agent_load * 0.1
-    )
+    return delivery.distance_km or 1.0
 
 
 def get_osrm_route(coords: list[tuple[float, float]]) -> dict:
@@ -69,23 +52,19 @@ def get_osrm_route(coords: list[tuple[float, float]]) -> dict:
 
 
 def _nearest_neighbor_order(deliveries: list[Delivery], origin_lat: float, origin_lon: float) -> list[Delivery]:
-    RISK_WEIGHTS: dict[str, float] = {"HIGH": 3.0, "MEDIUM": 1.5, "LOW": 1.0}
-
     visited = [False] * len(deliveries)
     ordered: list[Delivery] = []
     cur_lat, cur_lon = origin_lat, origin_lon
 
     while len(ordered) < len(deliveries):
         best_idx = -1
-        best_score = float("inf")
+        best_dist = float("inf")
         for i, d in enumerate(deliveries):
             if visited[i] or not d.customer_lat or not d.customer_lon:
                 continue
             dist = haversine_km(cur_lat, cur_lon, d.customer_lat, d.customer_lon)
-            rw = RISK_WEIGHTS.get(d.risk_category or "LOW", 1.0)
-            score = dist / rw
-            if score < best_score:
-                best_score = score
+            if dist < best_dist:
+                best_dist = dist
                 best_idx = i
         if best_idx == -1:
             break
@@ -109,7 +88,7 @@ def generate_route(
     deliveries = []
     for did in delivery_ids:
         d = db.query(Delivery).filter(Delivery.id == did).first()
-        if d and d.status == DeliveryStatus.PENDING:
+        if d and d.status == DeliveryStatus.PENDING and d.warehouse_id == agent.warehouse_id:
             deliveries.append(d)
 
     if not deliveries:
@@ -215,15 +194,17 @@ def assign_best_agent(db: Session, delivery: Delivery) -> int | None:
     if not agents:
         return None
 
+    same_wh_agents = [a for a in agents if a.warehouse_id == delivery.warehouse_id]
+    if not same_wh_agents:
+        return None
+
     def agent_score(a: DeliveryAgent) -> float:
         wh = a.warehouse
         ref_lat = wh.lat if wh else (a.current_lat or 28.7)
         ref_lon = wh.lon if wh else (a.current_lon or 77.1)
-        dist = 0.0
         if delivery.customer_lat and delivery.customer_lon:
-            dist = haversine_km(ref_lat, ref_lon, delivery.customer_lat, delivery.customer_lon)
-        load_ratio = a.current_load / a.max_load if a.max_load else 1
-        return dist * 0.4 + load_ratio * 0.3 + (1 - a.success_rate) * 0.3
+            return haversine_km(ref_lat, ref_lon, delivery.customer_lat, delivery.customer_lon)
+        return float("inf")
 
-    best = min(agents, key=agent_score)
+    best = min(same_wh_agents, key=agent_score)
     return best.id

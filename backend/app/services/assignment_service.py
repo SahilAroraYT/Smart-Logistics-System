@@ -283,6 +283,18 @@ def _greedy_assign_deliveries(
     if not clusters:
         return {}
 
+    split = []
+    for c in clusters:
+        wh_ids = {d.warehouse_id for d in c if d.warehouse_id is not None}
+        if len(wh_ids) <= 1:
+            split.append(c)
+        else:
+            for wh_id in wh_ids:
+                sub = [d for d in c if d.warehouse_id == wh_id]
+                if sub:
+                    split.append(sub)
+    clusters = split
+
     warehouses = db.query(Warehouse).all()
 
     wh_assignments = clustering_service.assign_clusters_to_warehouses(clusters, warehouses)
@@ -302,7 +314,7 @@ def _greedy_assign_deliveries(
 
         wh_agents = [a for a in agents if a.warehouse_id == (warehouse.id if warehouse else None)]
         if not wh_agents:
-            wh_agents = agents
+            continue
 
         eligible_agents = [
             a for a in wh_agents
@@ -312,7 +324,7 @@ def _greedy_assign_deliveries(
 
         if not eligible_agents:
             eligible_agents = [
-                a for a in agents
+                a for a in wh_agents
                 if agent_capacities.get(a.id, 0) >= len(cluster)
             ]
 
@@ -327,10 +339,7 @@ def _greedy_assign_deliveries(
             for d in cluster:
                 if d.customer_lat and d.customer_lon:
                     dist += clustering_service.haversine_km(ref_lat, ref_lon, d.customer_lat, d.customer_lon)
-            dist = dist / len(cluster) if cluster else 0
-            load_ratio = (a.current_load + len(agent_assignments[a.id])) / a.max_load if a.max_load else 1
-            v_penalty = 0.0 if vehicle_config.is_vehicle_compatible(a.vehicle_type or "van", required_vehicle) else 0.2
-            return dist * 0.4 + load_ratio * 0.35 + (1 - a.success_rate) * 0.25 + v_penalty
+            return dist / len(cluster) if cluster else 0
 
         best_agent = min(eligible_agents, key=agent_score)
         agent_assignments[best_agent.id].extend(d.id for d in cluster)
