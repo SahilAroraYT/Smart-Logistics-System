@@ -96,7 +96,6 @@ export default function DashboardPage() {
                 <XAxis dataKey="name" />
                 <YAxis />
                 <Tooltip />
-                <Legend />
                 <Bar dataKey="value" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
