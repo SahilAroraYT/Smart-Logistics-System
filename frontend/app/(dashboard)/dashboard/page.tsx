@@ -5,7 +5,7 @@ import { api } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
-  Package, AlertTriangle, TrendingUp, Users, CheckCircle, XCircle, Bell as BellIcon,
+  Package, AlertTriangle, TrendingUp, Users, CheckCircle, XCircle, Bell as BellIcon, ClipboardCheck,
 } from "lucide-react";
 import {
   PieChart, Pie, Cell, ResponsiveContainer, Tooltip,
@@ -16,7 +16,7 @@ const RISK_COLORS = { LOW: "#22c55e", MEDIUM: "#f59e0b", HIGH: "#ef4444" };
 
 export default function DashboardPage() {
   const [stats, setStats] = useState({
-    total: 0, pending: 0, delivered: 0, failed: 0,
+    total: 0, pending: 0, assigned: 0, delivered: 0, failed: 0,
     avgRisk: 0, activeAlerts: 0,
   });
   const [riskData, setRiskData] = useState<{ name: string; value: number; color: string }[]>([]);
@@ -29,6 +29,7 @@ export default function DashboardPage() {
     ]).then(([deliveries, alerts]) => {
       const dels = (deliveries as { deliveries: Array<{ status: string; risk_score?: number; risk_category?: string }> }).deliveries;
       const pending = dels.filter((d) => d.status === "pending").length;
+      const assigned = dels.filter((d) => d.status === "assigned").length;
       const delivered = dels.filter((d) => d.status === "delivered").length;
       const failed = dels.filter((d) => d.status === "failed").length;
       const avgRisk = dels.length ? dels.reduce((s, d) => s + (d.risk_score || 0), 0) / dels.length : 0;
@@ -44,7 +45,7 @@ export default function DashboardPage() {
       ]);
 
       setStats({
-        total: dels.length, pending, delivered, failed,
+        total: dels.length, pending, assigned, delivered, failed,
         avgRisk: Math.round(avgRisk),
         activeAlerts: (alerts as Array<unknown>).length,
       });
@@ -60,10 +61,10 @@ export default function DashboardPage() {
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <StatCard icon={Package} label="Total Deliveries" value={stats.total} />
         <StatCard icon={TrendingUp} label="Pending" value={stats.pending} color="text-yellow-500" />
+        <StatCard icon={ClipboardCheck} label="Assigned" value={stats.assigned} color="text-blue-500" />
         <StatCard icon={CheckCircle} label="Delivered" value={stats.delivered} color="text-green-500" />
         <StatCard icon={XCircle} label="Failed" value={stats.failed} color="text-red-500" />
         <StatCard icon={AlertTriangle} label="Avg Risk Score" value={stats.avgRisk} />
-        <StatCard icon={BellIcon} label="Active Alerts" value={stats.activeAlerts} color="text-red-500" />
       </div>
       <div className="mt-8 grid gap-4 md:grid-cols-2">
         <Card>
@@ -87,6 +88,7 @@ export default function DashboardPage() {
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={[
                 { name: "Pending", value: stats.pending, fill: "#f59e0b" },
+                { name: "Assigned", value: stats.assigned, fill: "#3b82f6" },
                 { name: "Delivered", value: stats.delivered, fill: "#22c55e" },
                 { name: "Failed", value: stats.failed, fill: "#ef4444" },
               ]}>
