@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import {
   LayoutDashboard, Map as MapIcon, Package, Users, Route,
-  Bell, ScrollText, ClipboardList, Warehouse, LogOut,
+  ScrollText, ClipboardList, Warehouse, LogOut,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 
@@ -17,7 +17,6 @@ const NAV_ITEMS = [
   { href: "/agents", label: "Agents", icon: Users },
   { href: "/assignments", label: "Assignments", icon: ClipboardList },
   { href: "/routes", label: "Routes", icon: Route },
-  { href: "/alerts", label: "Alerts", icon: Bell },
   { href: "/audit", label: "Audit Log", icon: ScrollText },
 ];
 

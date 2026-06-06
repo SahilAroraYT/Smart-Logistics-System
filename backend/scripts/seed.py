@@ -1,6 +1,7 @@
 import sys
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 from sqlalchemy.orm import Session
 
@@ -11,6 +12,8 @@ from app.models.user import User, Role
 from app.models.agent import DeliveryAgent, AgentStatus
 from app.models.delivery import Delivery, DeliveryStatus
 from app.models.warehouse import Warehouse
+from app.models.route import Route, RouteStop
+from app.models.assignment import AssignmentSession, SessionDelivery
 from app.services import auth_service, ml_service
 from app.services.clustering_service import haversine_km
 
@@ -40,8 +43,24 @@ def seed_users(db: Session):
                 role=Role.DELIVERY_AGENT,
             ))
 
+    ludhiana_users = [
+        ("ldhbike1@logistics.com", "ldhbike1", "Ludhiana Bike 1"),
+        ("ldhbike2@logistics.com", "ldhbike2", "Ludhiana Bike 2"),
+        ("ldhcar3@logistics.com", "ldhcar3", "Ludhiana Car 3"),
+        ("ldhcar4@logistics.com", "ldhcar4", "Ludhiana Car 4"),
+        ("ldhvan5@logistics.com", "ldhvan5", "Ludhiana Van 5"),
+    ]
+    for email, password, name in ludhiana_users:
+        if not db.query(User).filter(User.email == email).first():
+            db.add(User(
+                email=email,
+                password_hash=auth_service.hash_password(password),
+                full_name=name,
+                role=Role.DELIVERY_AGENT,
+            ))
+
     db.commit()
-    print("  Seeded 23 users (3 staff + 20 agents)")
+    print("  Seeded 28 users (3 staff + 25 agents)")
 
 
 def seed_warehouses(db: Session):
@@ -56,6 +75,17 @@ def seed_warehouses(db: Session):
         if not db.query(Warehouse).filter(Warehouse.name == w["name"]).first():
             db.add(Warehouse(**w))
             created += 1
+    # Add Ludhiana warehouse if not exists
+    if not db.query(Warehouse).filter(Warehouse.name == "Ludhiana Warehouse").first():
+        db.add(Warehouse(
+            name="Ludhiana Warehouse",
+            street="GT Road",
+            city="Ludhiana",
+            pincode="141001",
+            lat=30.87381,
+            lon=75.84182,
+        ))
+        created += 1
     db.commit()
     print(f"  Seeded {created} warehouses")
 
@@ -65,7 +95,14 @@ def seed_agents(db: Session):
     if not warehouses:
         return
 
-    # Delete existing agents for clean re-seed
+    # Clear dependent data before deleting agents
+    db.query(RouteStop).delete()
+    db.query(Route).delete()
+    db.query(SessionDelivery).delete()
+    db.query(AssignmentSession).delete()
+    db.query(Delivery).delete()
+    db.flush()
+
     existing = db.query(DeliveryAgent).count()
     if existing:
         db.query(DeliveryAgent).delete()
@@ -80,7 +117,6 @@ def seed_agents(db: Session):
 
     WH_SHORT = {w.id: w.name.split()[0] for w in warehouses}
 
-    # Each warehouse: 2 bikes, 2 cars, 1 van
     wh_template = [
         ("bike", 0.002, 0.002, 0.90, 20),
         ("bike", -0.002, -0.002, 0.80, 20),
@@ -93,7 +129,6 @@ def seed_agents(db: Session):
     for wh in warehouses:
         short = WH_SHORT.get(wh.id, f"W{wh.id}")
         for idx, (vtype, lat_off, lon_off, succ_rate, max_ld) in enumerate(wh_template):
-            # Link agents to users sequentially (agent1@ -> first agent, etc.)
             user_id = agent_users[created].id if created < len(agent_users) else None
             name = "Agent One" if created == 0 else f"{short}-{vtype.capitalize()}-{idx + 1}"
 
@@ -122,35 +157,40 @@ def seed_deliveries(db: Session):
     csv_path = Path(__file__).parent.parent / "data" / "logistics_dataset_v3.csv"
     df = pd.read_csv(csv_path).head(500)
 
-    existing = {r[0] for r in db.query(Delivery.order_id).all()}
-    df = df[~df["order_id"].astype(str).isin(existing)]
-
     warehouses = db.query(Warehouse).all()
+    if not warehouses:
+        print("  No warehouses found, skipping deliveries")
+        return
+
+    rng = np.random.default_rng(42)
 
     ml_service.load_model()
     created = 0
 
-    for _, row in df.iterrows():
-        pred_data = row.to_dict()
-        result = ml_service.predict(pred_data)
+    for idx, (_, row) in enumerate(df.iterrows()):
+        wh = warehouses[idx % len(warehouses)]
 
-        nearest_wh_id = None
-        if warehouses and row["customer_lat"] and row["customer_lon"]:
-            nearest_wh = min(
-                warehouses,
-                key=lambda w: haversine_km(w.lat, w.lon, row["customer_lat"], row["customer_lon"]),
-            )
-            nearest_wh_id = nearest_wh.id
+        lat_off = rng.uniform(0.01, 0.15) * (1 if rng.random() < 0.5 else -1)
+        lon_off = rng.uniform(0.01, 0.15) * (1 if rng.random() < 0.5 else -1)
+        cust_lat = round(wh.lat + lat_off, 6)
+        cust_lon = round(wh.lon + lon_off, 6)
+        dist = round(haversine_km(wh.lat, wh.lon, cust_lat, cust_lon), 2)
+
+        pred_data = row.to_dict()
+        try:
+            result = ml_service.predict(pred_data)
+        except Exception:
+            result = {"risk_score": 50.0, "risk_category": "MEDIUM"}
 
         db.add(Delivery(
             order_id=str(int(row["order_id"])),
             customer_id=int(row["customer_id"]),
             customer_name=f"Customer-{int(row['customer_id'])}",
-            customer_lat=row["customer_lat"],
-            customer_lon=row["customer_lon"],
-            warehouse_lat=row["warehouse_lat"],
-            warehouse_lon=row["warehouse_lon"],
-            distance_km=row["distance_km"],
+            customer_lat=cust_lat,
+            customer_lon=cust_lon,
+            warehouse_lat=wh.lat,
+            warehouse_lon=wh.lon,
+            distance_km=dist,
             delivery_zone=row["delivery_zone"],
             time_slot=row["time_slot"],
             day_of_week=row["day_of_week"],
@@ -183,14 +223,14 @@ def seed_deliveries(db: Session):
             status=DeliveryStatus.PENDING,
             risk_score=result["risk_score"],
             risk_category=result["risk_category"],
-            warehouse_id=nearest_wh_id,
+            warehouse_id=wh.id,
         ))
         created += 1
         if created % 100 == 0:
             db.flush()
 
     db.commit()
-    print(f"  Seeded {created} deliveries")
+    print(f"  Seeded {created} deliveries (≈{created // len(warehouses)} per warehouse)")
 
 
 def main():

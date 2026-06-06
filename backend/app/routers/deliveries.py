@@ -1,8 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from app.database import get_db
+from app.dependencies.auth import get_current_user
+from app.models.user import User
 from app.schemas.delivery import DeliveryListResponse, DeliveryResponse, PredictionRequest, PredictionResponse, ManualDeliveryCreate
-from app.services import ml_service, delivery_service, assignment_service
+from app.services import ml_service, delivery_service, assignment_service, audit_service
 
 router = APIRouter()
 
@@ -40,7 +42,11 @@ def predict(payload: PredictionRequest):
 
 
 @router.post("/manual")
-def create_manual_delivery(payload: ManualDeliveryCreate, db: Session = Depends(get_db)):
+def create_manual_delivery(
+    payload: ManualDeliveryCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     delivery = assignment_service.create_manual_delivery(
         db, payload.session_id or 0,
         customer_name=payload.customer_name,
@@ -50,6 +56,11 @@ def create_manual_delivery(payload: ManualDeliveryCreate, db: Session = Depends(
         customer_lat=payload.customer_lat,
         customer_lon=payload.customer_lon,
         package_weight=payload.package_weight,
+    )
+    audit_service.log_action(
+        db, action_type="create_delivery", user_id=current_user.id,
+        entity_type="delivery", entity_id=delivery.id,
+        extra_data={"order_id": delivery.order_id, "customer_name": delivery.customer_name},
     )
     return {
         "id": delivery.id,

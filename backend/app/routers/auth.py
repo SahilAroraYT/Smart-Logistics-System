@@ -4,7 +4,7 @@ from app.database import get_db
 from app.dependencies.auth import create_access_token, get_current_user
 from app.models.user import Role, User
 from app.schemas.user import UserCreate, UserLogin, Token, UserResponse
-from app.services import user_service, auth_service
+from app.services import user_service, auth_service, audit_service
 
 router = APIRouter()
 
@@ -15,6 +15,11 @@ def login(payload: UserLogin, db: Session = Depends(get_db)):
     if not user:
         raise HTTPException(status_code=401, detail="Invalid credentials")
     token = create_access_token({"sub": user.email, "role": user.role.value})
+    audit_service.log_action(
+        db, action_type="login", user_id=user.id,
+        entity_type="user", entity_id=user.id,
+        extra_data={"email": user.email, "role": user.role.value},
+    )
     return {"access_token": token, "token_type": "bearer"}
 
 
@@ -26,6 +31,11 @@ def register(payload: UserCreate, db: Session = Depends(get_db)):
     if payload.role not in [r.value for r in Role]:
         raise HTTPException(status_code=400, detail="Invalid role")
     user = user_service.create_user(db, payload.email, payload.password, payload.full_name, payload.role)
+    audit_service.log_action(
+        db, action_type="register", user_id=user.id,
+        entity_type="user", entity_id=user.id,
+        extra_data={"email": user.email, "role": user.role},
+    )
     return user
 
 

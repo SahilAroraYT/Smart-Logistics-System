@@ -4,6 +4,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.dependencies.auth import get_current_user
+from app.models.user import User
 from app.schemas.assignment import (
     AssignmentSessionResponse,
     AssignmentSessionDetail,
@@ -15,7 +17,7 @@ from app.schemas.assignment import (
     AgentGroupInfo,
     RouteInSession,
 )
-from app.services import assignment_service
+from app.services import assignment_service, audit_service
 from app.models.route import Route
 
 router = APIRouter()
@@ -41,8 +43,24 @@ def list_sessions(db: Session = Depends(get_db)):
 
 
 @router.post("/", response_model=AssignmentSessionResponse)
-def create_session(payload: AssignmentSessionCreate, db: Session = Depends(get_db)):
+def create_session(
+    payload: AssignmentSessionCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     session = assignment_service.create_session(db, payload.name, payload.delivery_ids)
+    audit_service.log_action(
+        db, action_type="create_session", user_id=current_user.id,
+        entity_type="session", entity_id=session.id,
+        extra_data={"name": session.name, "delivery_count": len(payload.delivery_ids) if payload.delivery_ids else 0},
+    )
+    if payload.delivery_ids:
+        for did in payload.delivery_ids:
+            audit_service.log_action(
+                db, action_type="add_delivery_to_session", user_id=current_user.id,
+                entity_type="delivery", entity_id=did,
+                extra_data={"session_id": session.id, "session_name": session.name},
+            )
     return AssignmentSessionResponse(
         id=session.id,
         name=session.name,
@@ -82,18 +100,39 @@ def delete_session(session_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/{session_id}/deliveries")
-def add_deliveries(session_id: int, payload: AddDeliveriesRequest, db: Session = Depends(get_db)):
+def add_deliveries(
+    session_id: int,
+    payload: AddDeliveriesRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     session = assignment_service.get_session(db, session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
     count = assignment_service.add_deliveries_to_session(db, session_id, payload.delivery_ids)
+    for did in payload.delivery_ids:
+        audit_service.log_action(
+            db, action_type="add_delivery_to_session", user_id=current_user.id,
+            entity_type="delivery", entity_id=did,
+            extra_data={"session_id": session_id, "session_name": session.name},
+        )
     return {"added": count}
 
 
 @router.delete("/{session_id}/deliveries/{delivery_id}")
-def remove_delivery(session_id: int, delivery_id: int, db: Session = Depends(get_db)):
+def remove_delivery(
+    session_id: int,
+    delivery_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     if not assignment_service.remove_delivery_from_session(db, session_id, delivery_id):
         raise HTTPException(status_code=404, detail="Delivery not in session")
+    audit_service.log_action(
+        db, action_type="remove_delivery_from_session", user_id=current_user.id,
+        entity_type="delivery", entity_id=delivery_id,
+        extra_data={"session_id": session_id},
+    )
     return {"detail": "Delivery removed from session"}
 
 
@@ -128,12 +167,23 @@ def add_manual_delivery(session_id: int, payload: ManualDeliveryRequest, db: Ses
 
 
 @router.post("/{session_id}/generate", response_model=GenerateRoutesResponse)
-def generate_routes(session_id: int, db: Session = Depends(get_db)):
+def generate_routes(
+    session_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     result = assignment_service.generate_routes_for_session(db, session_id)
     if "error" in result:
         raise HTTPException(status_code=400, detail=result["error"])
 
     routes = db.query(Route).filter(Route.session_id == session_id).all()
+    for r in routes:
+        stop_count = len(r.stops) if r.stops else 0
+        audit_service.log_action(
+            db, action_type="generate_session_route", user_id=current_user.id,
+            entity_type="route", entity_id=r.id,
+            extra_data={"session_id": session_id, "route_name": r.name, "agent_id": r.agent_id, "delivery_count": stop_count},
+        )
     return GenerateRoutesResponse(
         session_id=session_id,
         routes_created=result["routes_created"],

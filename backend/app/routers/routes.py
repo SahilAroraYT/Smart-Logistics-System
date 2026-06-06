@@ -3,6 +3,8 @@ import json
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.database import get_db
+from app.dependencies.auth import get_current_user
+from app.models.user import User
 from app.schemas.route import RouteResponse, RouteGenerationRequest, RouteGenerationResponse, RouteDetailResponse, RouteStopInfo
 from app.services import routing_service, delivery_service, audit_service
 from app.models.route import Route, RouteStop
@@ -58,7 +60,11 @@ def get_route(route_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/generate", response_model=RouteGenerationResponse)
-def generate_route(payload: RouteGenerationRequest, db: Session = Depends(get_db)):
+def generate_route(
+    payload: RouteGenerationRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     pending = delivery_service.get_pending_deliveries(db)
     if not pending:
         raise HTTPException(status_code=400, detail="No pending deliveries")
@@ -75,6 +81,12 @@ def generate_route(payload: RouteGenerationRequest, db: Session = Depends(get_db
     if not route:
         raise HTTPException(status_code=500, detail="Failed to generate route")
 
+    audit_service.log_action(
+        db, action_type="generate_route", user_id=current_user.id,
+        entity_type="route", entity_id=route.id,
+        extra_data={"route_name": route.name, "agent_id": agent_id, "delivery_count": len(delivery_ids)},
+    )
+
     stops = db.query(RouteStop).filter(RouteStop.route_id == route.id).order_by(RouteStop.stop_order).all()
     return RouteGenerationResponse(
         route_id=route.id,
@@ -87,8 +99,18 @@ def generate_route(payload: RouteGenerationRequest, db: Session = Depends(get_db
 
 
 @router.post("/{route_id}/reroute")
-def reroute_route(route_id: int, failed_delivery_ids: list[int] = [], db: Session = Depends(get_db)):
+def reroute_route(
+    route_id: int,
+    failed_delivery_ids: list[int] = [],
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     route = routing_service.trigger_reroute(db, route_id, failed_delivery_ids)
     if not route:
         raise HTTPException(status_code=404, detail="Route not found or no remaining stops")
+    audit_service.log_action(
+        db, action_type="reroute_route", user_id=current_user.id,
+        entity_type="route", entity_id=route_id,
+        extra_data={"failed_delivery_ids": failed_delivery_ids},
+    )
     return RouteResponse.model_validate(route)

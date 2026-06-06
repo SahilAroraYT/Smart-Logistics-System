@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.schemas.agent import AgentResponse, AgentUpdate, AgentAssignmentRequest, AgentAssignmentResponse
-from app.services import agent_service, routing_service
+from app.services import agent_service, routing_service, audit_service
 from app.dependencies.auth import get_current_user
 from app.models.user import User
 from app.models.delivery import Delivery, DeliveryStatus
@@ -82,7 +82,11 @@ def auto_assign_all(db: Session = Depends(get_db)):
 
 
 @router.post("/{agent_id}/offline")
-def set_agent_offline(agent_id: int, db: Session = Depends(get_db)):
+def set_agent_offline(
+    agent_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     from app.models.route import Route, RouteStatus
     from app.models.route import RouteStop
 
@@ -117,5 +121,11 @@ def set_agent_offline(agent_id: int, db: Session = Depends(get_db)):
 
         route.status = RouteStatus.CANCELLED
         db.commit()
+
+    audit_service.log_action(
+        db, action_type="agent_offline", user_id=current_user.id,
+        entity_type="agent", entity_id=agent_id,
+        extra_data={"agent_name": agent.name, "redistributed_count": redistributed},
+    )
 
     return {"detail": f"Agent {agent_id} set offline", "redistributed_count": redistributed}

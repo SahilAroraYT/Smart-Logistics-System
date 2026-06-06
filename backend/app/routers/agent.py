@@ -12,7 +12,7 @@ from app.models.agent import DeliveryAgent
 from app.schemas.agent import AgentResponse, AgentDashboardResponse
 from app.schemas.delivery import DeliveryResponse
 from app.schemas.route import RouteDetailResponse, RouteStopInfo
-from app.services import delivery_service
+from app.services import delivery_service, audit_service
 
 router = APIRouter()
 
@@ -130,6 +130,11 @@ def complete_delivery(
         )
 
     updated = delivery_service.update_delivery_status(db, delivery_id, DeliveryStatus.DELIVERED)
+    audit_service.log_action(
+        db, action_type="complete_delivery", user_id=agent.user_id,
+        entity_type="delivery", entity_id=delivery_id,
+        extra_data={"order_id": delivery.order_id, "agent_id": agent.id, "agent_name": agent.name},
+    )
     return DeliveryResponse.model_validate(updated)
 
 
@@ -157,4 +162,9 @@ def fail_delivery(
         )
 
     updated = delivery_service.update_delivery_status(db, delivery_id, DeliveryStatus.FAILED)
+    audit_service.log_action(
+        db, action_type="fail_delivery", user_id=agent.user_id,
+        entity_type="delivery", entity_id=delivery_id,
+        extra_data={"order_id": delivery.order_id, "agent_id": agent.id, "agent_name": agent.name},
+    )
     return DeliveryResponse.model_validate(updated)
