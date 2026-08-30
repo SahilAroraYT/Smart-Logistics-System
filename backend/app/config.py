@@ -10,6 +10,9 @@ class Settings(BaseSettings):
     APP_VERSION: str = "1.0.0"
     DEBUG: bool = True
 
+    # Comma-separated list of allowed browser origins (CORS)
+    CORS_ORIGINS: str = "http://localhost:3000"
+
     # Database
     DATABASE_URL: str = os.environ.get(
         "DATABASE_URL",
