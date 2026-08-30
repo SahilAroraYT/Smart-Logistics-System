@@ -23,14 +23,25 @@ Vercel (Next.js frontend)  ──NEXT_PUBLIC_API_URL──►  Render (FastAPI b
 
 ## 1. Supabase
 
-### 1.1 Get the connection string
-Supabase dashboard → Project Settings → **Database** → Connection string → **URI**.
+### 1.1 Get the connection string (MUST use the pooler)
+Supabase dashboard → Project Settings → **Database** → Connection string → **Transaction (pooler)**.
 
-For production/from a server, prefer the **Transaction pooler** (port `6543`) URL:
+**You MUST use the Transaction pooler URL (port `6543`), NOT the direct `db.<ref>.supabase.co:5432` host.** The direct host is IPv6-only and cannot be reached from Render (IPv4) — this causes `OperationalError` (SQLAlchemy error class e3q8) → HTTP 500 on every request. The pooler works over IPv4.
+
 ```
-postgresql://postgres.<ref>:<PASSWORD>@aws-0-<region>.pooler.supabase.com:6543/postgres
+postgresql://postgres.<PROJECT_REF>:<PASSWORD>@aws-0-<region>.pooler.supabase.com:6543/postgres
 ```
-The backend uses the psycopg2 dialect, so use the `postgresql://` (not `postgresql+asyncpg`) form.
+
+Notes:
+- The username is `postgres.<PROJECT_REF>` (with the ref after the dot), host is `*.pooler.supabase.com`, port is `6543`.
+- If the dashboard shows `[YOUR-PASSWORD]`, replace it with your real DB password.
+- The backend uses the psycopg2 dialect, so keep the `postgresql://` (not `postgresql+asyncpg`) form.
+
+Verify it connects from your machine before pasting into Render:
+```bash
+cd backend
+.venv/bin/python -c "import psycopg2; c=psycopg2.connect('postgresql://postgres.<REF>:<PASSWORD>@aws-0-<region>.pooler.supabase.com:6543/postgres'); print('CONNECT OK')"
+```
 
 ### 1.2 No schema work needed
 The app creates its own 8 tables. You choose between:
