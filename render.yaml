@@ -1,0 +1,37 @@
+# Render Blueprint for the Smart Logistics backend (Python FastAPI).
+# Install the Render CLI, then:  render blueprint launch
+# Or use the "Blueprint" import in the Render dashboard pointing at this repo.
+#
+# IMPORTANT: The ML model pickle(s) and training CSV are gitignored and will NOT
+# be in the build. Set ML_ASSET_BASE_URL (or MODEL_URL/ENCODER_URL/DATA_URL) so
+# the preDeploy command can fetch them, or the app will fail to load the model.
+#
+# Secrets (DATABASE_URL, JWT_SECRET_KEY) are set in the Render dashboard —
+# do NOT paste real credentials into this file.
+
+services:
+  - type: web
+    name: smart-logistics-backend
+    runtime: python
+    plan: free
+    region: oregon
+    rootDir: backend
+    buildCommand: |
+      pip install -r requirements.txt
+    preDeployCommand: |
+      bash scripts/fetch_ml_assets.sh
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /docs
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: JWT_SECRET_KEY
+        sync: false
+      - key: DEBUG
+        value: "false"
+      - key: DEMO_MODE
+        value: "false"
+      - key: ML_ASSET_BASE_URL
+        sync: false
+      - key: PYTHON_VERSION
+        value: "3.13.5"

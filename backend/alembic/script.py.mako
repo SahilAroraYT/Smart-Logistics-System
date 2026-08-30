@@ -1,35 +1,26 @@
-[alembic:post_write_hooks]
+"""${message}
 
-[loggers]
-keys = root,sqlalchemy,alembic
+Revision ID: ${up_revision}
+Revises: ${down_revision | comma,n}
+Create Date: ${create_date}
 
-[handlers]
-keys = console
+"""
+from typing import Sequence, Union
 
-[formatters]
-keys = generic
+from alembic import op
+import sqlalchemy as sa
+${imports if imports else ""}
 
-[logger_root]
-level = WARN
-handlers = console
-qualname =
+# revision identifiers, used by Alembic.
+revision: str = ${repr(up_revision)}
+down_revision: Union[str, None] = ${repr(down_revision)}
+branch_labels: Union[str, Sequence[str], None] = ${repr(branch_labels)}
+depends_on: Union[str, Sequence[str], None] = ${repr(depends_on)}
 
-[logger_sqlalchemy]
-level = WARN
-handlers =
-qualname = sqlalchemy.engine
 
-[logger_alembic]
-level = INFO
-handlers =
-qualname = alembic
+def upgrade() -> None:
+    ${upgrades if upgrades else "pass"}
 
-[handler_console]
-class = StreamHandler
-args = (sys.stderr,)
-level = NOTSET
-formatter = generic
 
-[formatter_generic]
-format = %(levelname)-5.5s [%(name)s] %(message)s
-datefmt = %H:%M:%S
+def downgrade() -> None:
+    ${downgrades if downgrades else "pass"}
