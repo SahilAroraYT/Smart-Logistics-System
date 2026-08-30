@@ -18,7 +18,6 @@ services:
     rootDir: backend
     buildCommand: |
       pip install -r requirements.txt
-    preDeployCommand: |
       bash scripts/fetch_ml_assets.sh
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /docs
